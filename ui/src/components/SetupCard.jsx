@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function SetupCard({ config, log, appendLog, clearLog, onRefresh, embedded }) {
+export default function SetupCard({ config, log, appendLog, clearLog, onRefresh, embedded, canInitialize = true }) {
   const [loading, setLoading] = useState(false)
 
   const runSetup = async () => {
@@ -57,7 +57,12 @@ export default function SetupCard({ config, log, appendLog, clearLog, onRefresh,
 
   const content = (
     <>
-      <button className="btn-primary" onClick={runSetup} disabled={loading} style={{ width: '100%' }}>
+      {!canInitialize && (
+        <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
+          Complete the AI Provider and Channels sections above to enable initialization.
+        </p>
+      )}
+      <button className="btn-primary" onClick={runSetup} disabled={loading || !canInitialize} style={{ width: '100%' }}>
         {loading ? 'Initializing...' : 'Initialize OpenClaw'}
       </button>
       {log && <pre>{log}</pre>}

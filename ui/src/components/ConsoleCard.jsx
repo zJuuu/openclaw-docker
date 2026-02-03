@@ -14,21 +14,21 @@ const COMMAND_GROUPS = [
     commands: [
       { id: 'diag:status', label: 'Status' },
       { id: 'diag:doctor', label: 'Doctor' },
-      { id: 'diag:logs', label: 'View Logs', needsArg: 'lines' },
+      { id: 'diag:logs', label: 'Logs', needsArg: 'lines' },
     ],
   },
   {
     label: 'System',
     commands: [
-      { id: 'sys:brew', label: 'Homebrew Version' },
-      { id: 'sys:node', label: 'Node Version' },
-      { id: 'sys:disk-usage', label: 'Disk Usage' },
+      { id: 'sys:brew', label: 'Brew' },
+      { id: 'sys:node', label: 'Node' },
+      { id: 'sys:disk-usage', label: 'Disk' },
     ],
   },
 ]
 
 export default function ConsoleCard() {
-  const [cmd, setCmd] = useState('diag:status')
+  const [cmd, setCmd] = useState('')
   const [arg, setArg] = useState('')
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -38,7 +38,11 @@ export default function ConsoleCard() {
     .flatMap(g => g.commands)
     .find(c => c.id === cmd)
 
-  const runCommand = async () => {
+  const runCommand = async (commandId) => {
+    const cmdToRun = commandId || cmd
+    if (!cmdToRun) return
+
+    setCmd(cmdToRun)
     setLoading(true)
     setOutput('Running...\n')
 
@@ -47,7 +51,7 @@ export default function ConsoleCard() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ cmd, arg: arg || undefined }),
+        body: JSON.stringify({ cmd: cmdToRun, arg: arg || undefined }),
       })
       const data = await res.json()
       setOutput(data.output || JSON.stringify(data, null, 2))
@@ -61,27 +65,42 @@ export default function ConsoleCard() {
   return (
     <div className="card">
       <h2>Debug Console</h2>
-      <div className="console-row">
-        <select value={cmd} onChange={(e) => setCmd(e.target.value)}>
-          {COMMAND_GROUPS.map(group => (
-            <optgroup key={group.label} label={group.label}>
+
+      {/* Command button grid */}
+      <div className="command-grid">
+        {COMMAND_GROUPS.map(group => (
+          <div key={group.label} className="command-group">
+            <div className="command-group-label">{group.label}</div>
+            <div className="command-buttons">
               {group.commands.map(c => (
-                <option key={c.id} value={c.id}>{c.label}</option>
+                <button
+                  key={c.id}
+                  className={`command-btn ${cmd === c.id ? 'active' : ''}`}
+                  onClick={() => runCommand(c.id)}
+                  disabled={loading}
+                >
+                  {c.label}
+                </button>
               ))}
-            </optgroup>
-          ))}
-        </select>
-        {currentCmd?.needsArg && (
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Arg input for commands that need it */}
+      {currentCmd?.needsArg && (
+        <div className="console-arg-row">
           <input
             value={arg}
             onChange={(e) => setArg(e.target.value)}
             placeholder={`Enter ${currentCmd.needsArg} (optional)`}
           />
-        )}
-        <button className="btn-secondary" onClick={runCommand} disabled={loading}>
-          {loading ? 'Running...' : 'Run'}
-        </button>
-      </div>
+          <button className="btn-secondary" onClick={() => runCommand()} disabled={loading}>
+            Run Again
+          </button>
+        </div>
+      )}
+
       {output && <pre>{output}</pre>}
     </div>
   )

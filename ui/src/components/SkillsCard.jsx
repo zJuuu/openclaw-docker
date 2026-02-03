@@ -1,11 +1,9 @@
 import { useState } from 'react'
 
 export default function SkillsCard() {
-  const [query, setQuery] = useState('')
-  const [slug, setSlug] = useState('')
+  const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState('installed')
 
   const listSkills = async () => {
     setLoading(true)
@@ -23,7 +21,7 @@ export default function SkillsCard() {
     }
   }
 
-  const searchSkills = async () => {
+  const searchSkills = async (query) => {
     setLoading(true)
     setOutput('Searching...\n')
     try {
@@ -42,8 +40,7 @@ export default function SkillsCard() {
     }
   }
 
-  const installSkill = async () => {
-    if (!slug.trim()) return
+  const installSkill = async (slug) => {
     setLoading(true)
     setOutput(`Installing ${slug}...\n`)
     try {
@@ -55,7 +52,7 @@ export default function SkillsCard() {
       })
       const data = await res.json()
       setOutput(data.output || (data.ok ? 'Installed successfully' : 'Installation failed'))
-      if (data.ok) setSlug('')
+      if (data.ok) setInput('')
     } catch (err) {
       setOutput(`Error: ${err.message}`)
     } finally {
@@ -82,79 +79,56 @@ export default function SkillsCard() {
     }
   }
 
+  // Smart action: if input contains '/', treat as install; otherwise search
+  const handleSmartAction = () => {
+    if (!input.trim()) return
+    if (input.includes('/')) {
+      installSkill(input.trim())
+    } else {
+      searchSkills(input.trim())
+    }
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleSmartAction()
+    }
+  }
+
   return (
     <div className="card">
       <h2>Skills Manager</h2>
-      <p className="hint">Install and manage OpenClaw skills via ClawHub</p>
+      <p className="hint">Search and install skills from ClawHub</p>
 
-      <div className="tabs">
-        <button
-          className={`tab ${activeTab === 'installed' ? 'active' : ''}`}
-          onClick={() => setActiveTab('installed')}
-        >
-          Installed
-        </button>
-        <button
-          className={`tab ${activeTab === 'search' ? 'active' : ''}`}
-          onClick={() => setActiveTab('search')}
-        >
-          Search
-        </button>
-        <button
-          className={`tab ${activeTab === 'install' ? 'active' : ''}`}
-          onClick={() => setActiveTab('install')}
-        >
-          Install
-        </button>
-      </div>
+      {/* Unified input row */}
+      <div className="skills-unified">
+        <div className="input-row">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search or install (e.g. 'git' or 'owner/skill')"
+            disabled={loading}
+          />
+          <button
+            className="btn-primary"
+            onClick={handleSmartAction}
+            disabled={loading || !input.trim()}
+          >
+            {loading ? 'Working...' : input.includes('/') ? 'Install' : 'Search'}
+          </button>
+        </div>
 
-      <div className="tab-content">
-        {activeTab === 'installed' && (
-          <div className="skills-section">
-            <div className="button-row">
-              <button className="btn-secondary" onClick={listSkills} disabled={loading}>
-                {loading ? 'Loading...' : 'Refresh List'}
-              </button>
-              <button className="btn-secondary" onClick={updateSkills} disabled={loading}>
-                Update All
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'search' && (
-          <div className="skills-section">
-            <div className="input-row">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search skills..."
-                onKeyDown={(e) => e.key === 'Enter' && searchSkills()}
-              />
-              <button className="btn-primary" onClick={searchSkills} disabled={loading}>
-                {loading ? 'Searching...' : 'Search'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'install' && (
-          <div className="skills-section">
-            <div className="input-row">
-              <input
-                type="text"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder="Skill slug (e.g. sonoscli)"
-                onKeyDown={(e) => e.key === 'Enter' && installSkill()}
-              />
-              <button className="btn-primary" onClick={installSkill} disabled={loading || !slug.trim()}>
-                {loading ? 'Installing...' : 'Install'}
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Quick action buttons */}
+        <div className="button-row">
+          <button className="btn-secondary" onClick={listSkills} disabled={loading}>
+            View Installed
+          </button>
+          <button className="btn-secondary" onClick={updateSkills} disabled={loading}>
+            Update All
+          </button>
+        </div>
       </div>
 
       {output && <pre className="skills-output">{output}</pre>}

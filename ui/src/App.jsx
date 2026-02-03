@@ -8,16 +8,9 @@ import ConsoleCard from './components/ConsoleCard'
 import BackupCard from './components/BackupCard'
 import SkillsCard from './components/SkillsCard'
 
-const STEPS = [
-  { id: 'provider', title: 'AI Provider', description: 'Configure your AI model provider' },
-  { id: 'channels', title: 'Channels', description: 'Set up messaging integrations' },
-  { id: 'initialize', title: 'Initialize', description: 'Start your OpenClaw instance' },
-]
-
 export default function App() {
   const [auth, setAuth] = useState({ loading: true, authenticated: false })
   const [status, setStatus] = useState({ loading: true })
-  const [step, setStep] = useState(0)
   const [config, setConfig] = useState({
     authChoice: 'akashml-api',
     authSecret: '',
@@ -29,7 +22,13 @@ export default function App() {
     slackAppToken: '',
   })
   const [log, setLog] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Inline UI states
+  const [showPairingForm, setShowPairingForm] = useState(false)
+  const [pairingChannel, setPairingChannel] = useState('telegram')
+  const [pairingCode, setPairingCode] = useState('')
+  const [pairingStatus, setPairingStatus] = useState('')
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
 
   // Check auth status on load
   useEffect(() => {
@@ -94,19 +93,56 @@ export default function App() {
 
   const clearLog = () => setLog('')
 
-  const canProceed = () => {
-    if (step === 0) {
-      // Provider step - need API key for AkashML
-      if (config.authChoice === 'akashml-api') {
-        return config.authSecret.trim() !== ''
-      }
-      return true
-    }
-    if (step === 1) {
-      // Channels step - at least one channel configured
-      return config.telegramToken || config.discordToken || (config.slackBotToken && config.slackAppToken)
+  // Validation checks for each section
+  const isProviderValid = () => {
+    if (config.authChoice === 'akashml-api') {
+      return config.authSecret.trim() !== ''
     }
     return true
+  }
+
+  const isChannelsValid = () => {
+    return config.telegramToken || config.discordToken || (config.slackBotToken && config.slackAppToken)
+  }
+
+  const canInitialize = () => isProviderValid() && isChannelsValid()
+
+  // Pairing approval handler
+  const handleApprovePairing = async () => {
+    if (!pairingCode.trim()) return
+    setPairingStatus('Approving...')
+    try {
+      const res = await fetch('/get-started/api/pairing/approve', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ channel: pairingChannel, code: pairingCode }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setPairingStatus('Pairing approved!')
+        setPairingCode('')
+        setTimeout(() => {
+          setShowPairingForm(false)
+          setPairingStatus('')
+        }, 2000)
+      } else {
+        setPairingStatus('Error: ' + (data.error || data.output))
+      }
+    } catch (err) {
+      setPairingStatus('Error: ' + err.message)
+    }
+  }
+
+  // Reset config handler
+  const handleResetConfig = async () => {
+    try {
+      await fetch('/get-started/api/reset', { method: 'POST', credentials: 'same-origin' })
+      setShowResetConfirm(false)
+      refreshStatus()
+    } catch (err) {
+      setShowResetConfirm(false)
+    }
   }
 
   // Show loading
@@ -146,31 +182,19 @@ export default function App() {
       {/* Show status only when configured */}
       {isConfigured && <StatusCard status={status} />}
 
-      {/* Multi-step onboarding */}
+      {/* Single-page configuration with collapsible sections */}
       {!isConfigured && !status.loading && (
         <>
-          {/* Progress indicator */}
-          <div className="stepper">
-            {STEPS.map((s, i) => (
-              <div
-                key={s.id}
-                className={`step ${i === step ? 'active' : ''} ${i < step ? 'completed' : ''}`}
-                onClick={() => i < step && setStep(i)}
-              >
-                <div className="step-number">{i < step ? '✓' : i + 1}</div>
-                <div className="step-label">{s.title}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Step content */}
-          <div className="step-content">
-            <div className="step-header">
-              <h2>{STEPS[step].title}</h2>
-              <p className="hint">{STEPS[step].description}</p>
-            </div>
-
-            {step === 0 && (
+          {/* Provider Section */}
+          <details className="config-section" open>
+            <summary className="section-header">
+              <span className="section-title">
+                {isProviderValid() && <span className="section-check">✓</span>}
+                AI Provider
+              </span>
+              <span className="section-hint">Configure your AI model provider</span>
+            </summary>
+            <div className="section-content">
               <ProviderCard
                 authChoice={config.authChoice}
                 authSecret={config.authSecret}
@@ -179,13 +203,30 @@ export default function App() {
                 onChange={updateConfig}
                 embedded
               />
-            )}
+            </div>
+          </details>
 
-            {step === 1 && (
+          {/* Channels Section */}
+          <details className="config-section" open>
+            <summary className="section-header">
+              <span className="section-title">
+                {isChannelsValid() && <span className="section-check">✓</span>}
+                Channels
+              </span>
+              <span className="section-hint">Set up messaging integrations</span>
+            </summary>
+            <div className="section-content">
               <ChannelsCard config={config} onChange={updateConfig} embedded />
-            )}
+            </div>
+          </details>
 
-            {step === 2 && (
+          {/* Initialize Section */}
+          <details className="config-section" open>
+            <summary className="section-header">
+              <span className="section-title">Initialize</span>
+              <span className="section-hint">Start your OpenClaw instance</span>
+            </summary>
+            <div className="section-content">
               <SetupCard
                 config={config}
                 log={log}
@@ -193,121 +234,147 @@ export default function App() {
                 clearLog={clearLog}
                 onRefresh={refreshStatus}
                 embedded
+                canInitialize={canInitialize()}
               />
-            )}
-          </div>
+            </div>
+          </details>
 
-          {/* Navigation */}
-          <div className="step-nav">
-            <button
-              className="btn-secondary"
-              onClick={() => setStep(s => s - 1)}
-              disabled={step === 0}
-            >
-              Back
-            </button>
-            <div className="step-nav-spacer" />
-            {step < STEPS.length - 1 ? (
-              <button
-                className="btn-primary"
-                onClick={() => setStep(s => s + 1)}
-                disabled={!canProceed()}
-              >
-                Continue
-              </button>
-            ) : null}
-          </div>
-
-          {/* Recovery tools */}
-          <div className="recovery-section">
-            <button
-              className="btn-secondary btn-small"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              {showAdvanced ? 'Hide' : 'Show'} Recovery Tools
-            </button>
-            {showAdvanced && (
-              <>
-                <SkillsCard />
-                <ConsoleCard />
-                <BackupCard onRefresh={refreshStatus} />
-              </>
-            )}
-          </div>
+          {/* Advanced Tools - Always visible as collapsible */}
+          <details className="config-section advanced-section">
+            <summary className="section-header">
+              <span className="section-title">Advanced Tools</span>
+              <span className="section-hint">Skills, Console, Backup</span>
+            </summary>
+            <div className="section-content">
+              <SkillsCard />
+              <ConsoleCard />
+              <BackupCard onRefresh={refreshStatus} />
+            </div>
+          </details>
         </>
       )}
 
       {/* Show management tools when configured */}
       {isConfigured && (
         <>
+          {/* Quick Actions with inline pairing form */}
           <div className="card">
             <h2>Quick Actions</h2>
-            <div className="button-group">
-              <button
-                className="btn-primary"
-                onClick={async () => {
-                  const channel = prompt('Channel (telegram/discord):')
-                  if (!channel) return
-                  const code = prompt('Pairing code:')
-                  if (!code) return
-                  try {
-                    const res = await fetch('/get-started/api/pairing/approve', {
-                      method: 'POST',
-                      credentials: 'same-origin',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ channel, code }),
-                    })
-                    const data = await res.json()
-                    if (data.ok) {
-                      alert('Pairing approved!')
-                    } else {
-                      alert('Error: ' + (data.error || data.output))
-                    }
-                  } catch (err) {
-                    alert('Error: ' + err.message)
-                  }
-                }}
-              >
-                Approve Pairing
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                {showAdvanced ? 'Hide' : 'Show'} Advanced Tools
-              </button>
-            </div>
+
+            {/* Approve Pairing - Inline Form */}
+            {!showPairingForm ? (
+              <div className="button-group">
+                <button
+                  className="btn-primary"
+                  onClick={() => setShowPairingForm(true)}
+                >
+                  Approve Pairing
+                </button>
+              </div>
+            ) : (
+              <div className="inline-form">
+                <div className="inline-form-row">
+                  <label className="inline-label">Channel</label>
+                  <div className="channel-selector">
+                    <button
+                      className={`channel-btn ${pairingChannel === 'telegram' ? 'active' : ''}`}
+                      onClick={() => setPairingChannel('telegram')}
+                    >
+                      Telegram
+                    </button>
+                    <button
+                      className={`channel-btn ${pairingChannel === 'discord' ? 'active' : ''}`}
+                      onClick={() => setPairingChannel('discord')}
+                    >
+                      Discord
+                    </button>
+                  </div>
+                </div>
+                <div className="inline-form-row">
+                  <label className="inline-label">Pairing Code</label>
+                  <input
+                    type="text"
+                    value={pairingCode}
+                    onChange={(e) => setPairingCode(e.target.value)}
+                    placeholder="Enter pairing code"
+                    className="inline-input"
+                  />
+                </div>
+                {pairingStatus && (
+                  <div className={`inline-status ${pairingStatus.startsWith('Error') ? 'error' : ''}`}>
+                    {pairingStatus}
+                  </div>
+                )}
+                <div className="inline-form-actions">
+                  <button
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowPairingForm(false)
+                      setPairingCode('')
+                      setPairingStatus('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleApprovePairing}
+                    disabled={!pairingCode.trim()}
+                  >
+                    Approve
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {showAdvanced && (
-            <>
+          {/* Advanced Tools - Always visible as collapsible */}
+          <details className="config-section advanced-section">
+            <summary className="section-header">
+              <span className="section-title">Advanced Tools</span>
+              <span className="section-hint">Skills, Console, Backup</span>
+            </summary>
+            <div className="section-content">
               <SkillsCard />
               <ConsoleCard />
               <BackupCard onRefresh={refreshStatus} />
 
+              {/* Reset Configuration with inline confirmation */}
               <div className="card">
                 <h2>Reset Configuration</h2>
                 <p className="hint">
                   Delete the config file to reconfigure OpenClaw. Your credentials and
                   workspace data will be preserved.
                 </p>
-                <button
-                  className="btn-danger"
-                  onClick={async () => {
-                    if (!confirm('Reset configuration? You will need to run setup again.')) return
-                    try {
-                      await fetch('/get-started/api/reset', { method: 'POST', credentials: 'same-origin' })
-                      refreshStatus()
-                    } catch (err) {
-                      alert('Error: ' + err.message)
-                    }
-                  }}
-                >
-                  Reset Config
-                </button>
+                {!showResetConfirm ? (
+                  <button
+                    className="btn-danger"
+                    onClick={() => setShowResetConfirm(true)}
+                  >
+                    Reset Config
+                  </button>
+                ) : (
+                  <div className="inline-confirm">
+                    <span className="confirm-text">Are you sure? You will need to run setup again.</span>
+                    <div className="inline-form-actions">
+                      <button
+                        className="btn-secondary"
+                        onClick={() => setShowResetConfirm(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn-danger"
+                        onClick={handleResetConfig}
+                      >
+                        Confirm Reset
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </>
-          )}
+            </div>
+          </details>
         </>
       )}
     </div>

@@ -45,7 +45,7 @@ const AUTH_PROVIDERS = [
   },
   {
     id: 'custom',
-    name: 'Custom (OpenAI-Compatible)',
+    name: 'Custom',
     methods: [{ id: 'custom-openai', name: 'Custom Endpoint' }],
     isCustom: true,
   },
@@ -59,7 +59,6 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
   const [discoveredModels, setDiscoveredModels] = useState([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [modelsError, setModelsError] = useState('')
-  const [useManualInput, setUseManualInput] = useState(false)
   const debounceRef = useRef(null)
 
   useEffect(() => {
@@ -87,7 +86,24 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
             apiKey: authSecret?.trim() || '',
           }),
         })
-        const data = await res.json()
+
+        // Check if response is JSON
+        const contentType = res.headers.get('content-type')
+        if (!contentType || !contentType.includes('application/json')) {
+          // In dev mode, API isn't available - silently skip discovery
+          setDiscoveredModels([])
+          setModelsLoading(false)
+          return
+        }
+
+        const text = await res.text()
+        if (!text) {
+          setDiscoveredModels([])
+          setModelsLoading(false)
+          return
+        }
+
+        const data = JSON.parse(text)
 
         if (data.ok && data.models?.length > 0) {
           setDiscoveredModels(data.models)
@@ -102,8 +118,11 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
           }
         }
       } catch (err) {
+        // Silently fail in dev mode or if API unavailable
         setDiscoveredModels([])
-        setModelsError(err.message)
+        if (!import.meta.env.DEV) {
+          setModelsError(err.message)
+        }
       } finally {
         setModelsLoading(false)
       }
@@ -116,13 +135,12 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
     }
   }, [selectedProvider.id, customBaseUrl, authSecret])
 
-  const handleProviderChange = (e) => {
-    const provider = AUTH_PROVIDERS.find(p => p.id === e.target.value)
+  const handleProviderSelect = (providerId) => {
+    const provider = AUTH_PROVIDERS.find(p => p.id === providerId)
     if (provider?.methods[0]) {
       onChange('authChoice', provider.methods[0].id)
       setDiscoveredModels([])
       setModelsError('')
-      setUseManualInput(false)
 
       if (provider.preset) {
         onChange('customBaseUrl', provider.preset.baseUrl || '')
@@ -136,21 +154,30 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
 
   const isCustom = selectedProvider.isCustom
   const isAkashML = selectedProvider.id === 'akashml'
-  const showModelDropdown = isAkashML && discoveredModels.length > 0 && !useManualInput
+  const hasMultipleMethods = selectedProvider.methods.length > 1
 
   const content = (
     <>
-      <label style={embedded ? { marginTop: 0 } : undefined}>
+      {/* Provider selector as button group */}
+      <div className="provider-label" style={embedded ? { marginTop: 0 } : undefined}>
         Provider
         <Tooltip text="Select your AI model provider. AkashML is recommended for decentralized inference." />
-      </label>
-      <select value={selectedProvider.id} onChange={handleProviderChange}>
+      </div>
+      <div className="provider-selector">
         {AUTH_PROVIDERS.map(p => (
-          <option key={p.id} value={p.id}>{p.name}</option>
+          <button
+            key={p.id}
+            type="button"
+            className={`provider-btn ${selectedProvider.id === p.id ? 'active' : ''}`}
+            onClick={() => handleProviderSelect(p.id)}
+          >
+            {p.name}
+          </button>
         ))}
-      </select>
+      </div>
 
-      {!isCustom && (
+      {/* Auth method - only show if provider has multiple methods */}
+      {!isCustom && hasMultipleMethods && (
         <>
           <label>
             Authentication Method
@@ -164,7 +191,12 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
+        </>
+      )}
 
+      {/* API Key for non-custom providers */}
+      {!isCustom && (
+        <>
           <label>
             API Key / Token
             <Tooltip text="Your secret API key from the provider's dashboard. Never share this publicly." />
@@ -178,6 +210,7 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
         </>
       )}
 
+      {/* Custom provider fields */}
       {isCustom && (
         <>
           <label>
@@ -194,47 +227,38 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
           <label>
             Model Name
             <Tooltip text="The model identifier as expected by the API. Check your provider's docs for available models." />
-            {isAkashML && discoveredModels.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setUseManualInput(!useManualInput)}
-                style={{
-                  marginLeft: '8px',
-                  padding: '2px 8px',
-                  fontSize: '12px',
-                  background: 'transparent',
-                  border: '1px solid var(--akash-accent, #ff4d4d)',
-                  borderRadius: '4px',
-                  color: 'var(--akash-accent, #ff4d4d)',
-                  cursor: 'pointer',
-                }}
-              >
-                {useManualInput ? 'Use Dropdown' : 'Manual Entry'}
-              </button>
-            )}
           </label>
           {modelsLoading && (
-            <div style={{ fontSize: '13px', color: '#888', marginBottom: '4px' }}>
-              Discovering available models...
-            </div>
+            <div className="model-hint">Discovering available models...</div>
           )}
           {modelsError && !modelsLoading && (
-            <div style={{ fontSize: '13px', color: '#e74c3c', marginBottom: '4px' }}>
-              Discovery failed: {modelsError}
-            </div>
+            <div className="model-hint error">Discovery failed: {modelsError}</div>
           )}
-          {showModelDropdown ? (
-            <select
-              value={customModel || ''}
-              onChange={(e) => onChange('customModel', e.target.value)}
-            >
-              <option value="">Select a model...</option>
-              {discoveredModels.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.name}{m.reasoning ? ' (reasoning)' : ''}
-                </option>
-              ))}
-            </select>
+
+          {/* Show both dropdown and manual input when models are discovered */}
+          {isAkashML && discoveredModels.length > 0 ? (
+            <div className="model-input-group">
+              <select
+                value={customModel || ''}
+                onChange={(e) => onChange('customModel', e.target.value)}
+                className="model-select"
+              >
+                <option value="">Select a model...</option>
+                {discoveredModels.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.reasoning ? ' (reasoning)' : ''}
+                  </option>
+                ))}
+              </select>
+              <span className="model-or">or</span>
+              <input
+                type="text"
+                value={customModel || ''}
+                onChange={(e) => onChange('customModel', e.target.value)}
+                placeholder="Enter model ID"
+                className="model-manual"
+              />
+            </div>
           ) : (
             <input
               type="text"
@@ -243,8 +267,8 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
               placeholder="org/model-name or model-id"
             />
           )}
-          {isAkashML && discoveredModels.length > 0 && !useManualInput && (
-            <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+          {isAkashML && discoveredModels.length > 0 && (
+            <div className="model-hint">
               {discoveredModels.length} model{discoveredModels.length !== 1 ? 's' : ''} available
             </div>
           )}

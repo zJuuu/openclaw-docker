@@ -3,11 +3,14 @@ import { useState, useRef } from 'react'
 export default function BackupCard({ onRefresh }) {
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [showImportConfirm, setShowImportConfirm] = useState(false)
   const fileRef = useRef(null)
 
   const exportBackup = async () => {
     setLoading(true)
     setOutput('Creating backup...\n')
+    setError('')
 
     try {
       const res = await fetch('/get-started/export', { credentials: 'same-origin' })
@@ -31,16 +34,24 @@ export default function BackupCard({ onRefresh }) {
     }
   }
 
-  const importBackup = async () => {
+  const handleImportClick = () => {
     const file = fileRef.current?.files?.[0]
     if (!file) {
-      alert('Select a backup file first')
+      setError('Select a backup file first')
       return
     }
-    if (!confirm('Import backup? This will overwrite current data and restart the gateway.')) return
+    setError('')
+    setShowImportConfirm(true)
+  }
 
+  const importBackup = async () => {
+    const file = fileRef.current?.files?.[0]
+    if (!file) return
+
+    setShowImportConfirm(false)
     setLoading(true)
     setOutput(`Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)...\n`)
+    setError('')
 
     try {
       const buf = await file.arrayBuffer()
@@ -91,15 +102,48 @@ export default function BackupCard({ onRefresh }) {
           type="file"
           accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar"
           disabled={loading}
+          onChange={() => {
+            setError('')
+            setShowImportConfirm(false)
+          }}
         />
-        <button
-          className="btn-danger"
-          onClick={importBackup}
-          disabled={loading}
-          style={{ marginTop: '0.5rem' }}
-        >
-          {loading ? 'Importing...' : 'Import & Restore'}
-        </button>
+
+        {/* Inline error message */}
+        {error && (
+          <div className="inline-error">{error}</div>
+        )}
+
+        {/* Inline confirmation */}
+        {!showImportConfirm ? (
+          <button
+            className="btn-danger"
+            onClick={handleImportClick}
+            disabled={loading}
+            style={{ marginTop: '0.5rem' }}
+          >
+            {loading ? 'Importing...' : 'Import & Restore'}
+          </button>
+        ) : (
+          <div className="inline-confirm" style={{ marginTop: '0.5rem' }}>
+            <span className="confirm-text">
+              This will overwrite current data and restart the gateway. Continue?
+            </span>
+            <div className="inline-form-actions">
+              <button
+                className="btn-secondary"
+                onClick={() => setShowImportConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                onClick={importBackup}
+              >
+                Confirm Import
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {output && (
