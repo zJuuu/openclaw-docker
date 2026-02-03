@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ui/public/images/docker-claw.png" alt="OpenClaw Docker Logo" width="200">
+</p>
+
 # OpenClaw Docker
 
 OpenClaw in Docker - self-hosted AI agents made easy. Persistent workspaces, web-based 3-step setup (no CLI required), portable across any infrastructure, one-command deployment, built-in backup/restore, and isolated environment with no dependency conflicts.
