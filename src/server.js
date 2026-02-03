@@ -569,6 +569,15 @@ app.post("/get-started/api/discover-models", requireAuth, async (req, res) => {
   res.json({ ok: true, models });
 });
 
+// Skills management via clawhub CLI
+// Skills are installed to STATE_DIR/skills using --workdir
+const SKILLS_WORKDIR = STATE_DIR;
+
+async function runClawhub(args) {
+  const fullArgs = [...args, "--workdir", SKILLS_WORKDIR, "--no-input"];
+  return cli.execBinary("clawhub", fullArgs);
+}
+
 // Console command registry with categories
 const consoleCommands = {
   // Gateway lifecycle
@@ -665,6 +674,41 @@ app.post("/get-started/api/console", requireAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, output: `Error: ${err.message}` });
   }
+});
+
+// Skills API endpoints
+app.get("/get-started/api/skills", requireAuth, async (_, res) => {
+  const result = await runClawhub(["list"]);
+  res.json({ ok: result.success, output: result.output });
+});
+
+app.post("/get-started/api/skills/search", requireAuth, async (req, res) => {
+  const { query } = req.body || {};
+  const args = ["search"];
+  if (query?.trim()) args.push(query.trim());
+  const result = await runClawhub(args);
+  res.json({ ok: result.success, output: result.output });
+});
+
+app.post("/get-started/api/skills/install", requireAuth, async (req, res) => {
+  const { slug } = req.body || {};
+  if (!slug?.trim()) {
+    return res.status(400).json({ ok: false, error: "Skill slug is required" });
+  }
+  const result = await runClawhub(["install", slug.trim()]);
+  res.json({ ok: result.success, output: result.output });
+});
+
+app.post("/get-started/api/skills/update", requireAuth, async (req, res) => {
+  const { slug } = req.body || {};
+  const args = ["update"];
+  if (slug?.trim()) {
+    args.push(slug.trim());
+  } else {
+    args.push("--all");
+  }
+  const result = await runClawhub(args);
+  res.json({ ok: result.success, output: result.output });
 });
 
 // Backup export

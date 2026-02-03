@@ -590,6 +590,73 @@ a.btn-secondary:hover {
   text-align: left;
 }
 
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.tab {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  color: #737373;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  color: #A3A3A3;
+  transform: none;
+}
+
+.tab.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #F5F5F5;
+}
+
+.tab-content {
+  min-height: 60px;
+}
+
+/* Skills section */
+.skills-section {
+  margin-bottom: 8px;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input-row input {
+  flex: 1;
+  margin-top: 0;
+}
+
+.input-row button {
+  flex-shrink: 0;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.skills-output {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .container {

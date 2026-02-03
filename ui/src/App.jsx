@@ -6,6 +6,7 @@ import ChannelsCard from './components/ChannelsCard'
 import SetupCard from './components/SetupCard'
 import ConsoleCard from './components/ConsoleCard'
 import BackupCard from './components/BackupCard'
+import SkillsCard from './components/SkillsCard'
 
 const STEPS = [
   { id: 'provider', title: 'AI Provider', description: 'Configure your AI model provider' },
@@ -227,6 +228,7 @@ export default function App() {
             </button>
             {showAdvanced && (
               <>
+                <SkillsCard />
                 <ConsoleCard />
                 <BackupCard onRefresh={refreshStatus} />
               </>
@@ -279,6 +281,7 @@ export default function App() {
 
           {showAdvanced && (
             <>
+              <SkillsCard />
               <ConsoleCard />
               <BackupCard onRefresh={refreshStatus} />
 
