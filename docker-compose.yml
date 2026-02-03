@@ -1,0 +1,15 @@
+services:
+  openclaw:
+    build: .
+    # Or use pre-built image from github container registry
+    # image: ghcr.io/zjuuu/openclaw-docker:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - openclaw-data:/data
+    restart: unless-stopped
+
+volumes:
+  openclaw-data:

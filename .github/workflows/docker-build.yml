@@ -1,0 +1,150 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: [main]
+  schedule:
+    # Check for new OpenClaw releases every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no new release'
+        type: boolean
+        default: false
+      openclaw_ref:
+        description: 'OpenClaw git ref (tag/branch/sha)'
+        type: string
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  OPENCLAW_REPO: openclaw/openclaw
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      openclaw_ref: ${{ steps.check.outputs.openclaw_ref }}
+      openclaw_version: ${{ steps.check.outputs.openclaw_version }}
+    steps:
+      - name: Get latest OpenClaw release
+        id: release
+        run: |
+          RELEASE_JSON=$(curl -s "https://api.github.com/repos/${{ env.OPENCLAW_REPO }}/releases/latest")
+          RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name // empty')
+
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "No release found, falling back to main branch"
+            RELEASE_TAG="main"
+          fi
+
+          echo "tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+          echo "Latest OpenClaw release: ${RELEASE_TAG}"
+
+      - name: Restore last built version from cache
+        if: github.event_name == 'schedule'
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache-marker
+          key: openclaw-release-${{ steps.release.outputs.tag }}
+
+      - name: Check if build is needed
+        id: check
+        run: |
+          # Determine which ref to build
+          if [ -n "${{ inputs.openclaw_ref }}" ]; then
+            REF="${{ inputs.openclaw_ref }}"
+            echo "Using manually specified ref: ${REF}"
+          else
+            REF="${{ steps.release.outputs.tag }}"
+          fi
+
+          echo "openclaw_ref=${REF}" >> $GITHUB_OUTPUT
+          echo "openclaw_version=${REF}" >> $GITHUB_OUTPUT
+
+          # For scheduled runs, only build if release changed
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+              echo "Release ${{ steps.release.outputs.tag }} was already built, skipping."
+              echo "should_build=false" >> $GITHUB_OUTPUT
+            else
+              echo "New release detected: ${{ steps.release.outputs.tag }}"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_build }}" != "true" ]; then
+            # Manual trigger without force - check cache
+            if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ] && [ -z "${{ inputs.openclaw_ref }}" ]; then
+              echo "Release already built. Use force_build=true to rebuild."
+              echo "should_build=false" >> $GITHUB_OUTPUT
+            else
+              echo "should_build=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Always build for push, PR, and forced manual triggers
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=openclaw-${{ needs.check-upstream.outputs.openclaw_version }},enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=ref,event=branch
+            type=sha,prefix=
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            OPENCLAW_GIT_REF=${{ needs.check-upstream.outputs.openclaw_ref }}
+
+      - name: Create and save cache marker
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p .cache-marker
+          echo "${{ needs.check-upstream.outputs.openclaw_version }}" > .cache-marker/openclaw-version
+
+      - name: Save built version to cache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache-marker
+          key: openclaw-release-${{ needs.check-upstream.outputs.openclaw_version }}
