@@ -49,69 +49,43 @@ export default function StatusCard({ status }) {
             </span>
           )}
         </div>
-        <p style={{ marginTop: '1rem', marginBottom: '1rem' }}>
-          Your bot is configured and ready. Use the Control Panel to manage channels,
-          view conversations, and configure settings.
-        </p>
-        <div className="button-group">
-          <a href="/openclaw" className="btn-primary" style={{
-            display: 'inline-block',
-            textDecoration: 'none',
-            textAlign: 'center'
-          }}>
-            Open Control Panel
-          </a>
-          <a href="/get-started/export" className="btn-secondary" style={{
-            display: 'inline-block',
-            textDecoration: 'none',
-            textAlign: 'center'
-          }}>
-            Download Backup
-          </a>
-        </div>
-
         {status.gatewayToken && (
-          <details style={{ marginTop: '1.5rem' }}>
-            <summary style={{ cursor: 'pointer', color: '#a1a1aa' }}>
-              API Access (Advanced)
-            </summary>
-            <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <strong style={{ color: '#fbbf24' }}>Gateway Token</strong>
-                <div>
-                  <button
-                    onClick={() => setShowToken(!showToken)}
-                    className="btn-secondary"
-                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', marginRight: '0.5rem' }}
-                  >
-                    {showToken ? 'Hide' : 'Show'}
-                  </button>
-                  <button
-                    onClick={copyToken}
-                    className="btn-secondary"
-                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
-                  >
-                    {copied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
+          <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <strong style={{ color: '#fbbf24' }}>Gateway Token</strong>
+              <div>
+                <button
+                  onClick={() => setShowToken(!showToken)}
+                  className="btn-secondary"
+                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', marginRight: '0.5rem' }}
+                >
+                  {showToken ? 'Hide' : 'Show'}
+                </button>
+                <button
+                  onClick={copyToken}
+                  className="btn-secondary"
+                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
               </div>
-              <p className="hint" style={{ margin: '0.5rem 0' }}>
-                Use this token for CLI access or external API integrations.
-              </p>
-              {showToken && (
-                <code style={{
-                  display: 'block',
-                  padding: '0.5rem',
-                  background: 'rgba(0,0,0,0.3)',
-                  borderRadius: '4px',
-                  wordBreak: 'break-all',
-                  fontSize: '0.75rem'
-                }}>
-                  {status.gatewayToken}
-                </code>
-              )}
             </div>
-          </details>
+            <p className="hint" style={{ margin: '0.5rem 0' }}>
+              Use this token for CLI access or external API integrations.
+            </p>
+            {showToken && (
+              <code style={{
+                display: 'block',
+                padding: '0.5rem',
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: '4px',
+                wordBreak: 'break-all',
+                fontSize: '0.75rem'
+              }}>
+                {status.gatewayToken}
+              </code>
+            )}
+          </div>
         )}
       </div>
     )

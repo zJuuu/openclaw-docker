@@ -553,6 +553,38 @@ app.post("/get-started/api/reset", requireAuth, async (_, res) => {
   }
 });
 
+// Config read/write endpoints
+app.get("/get-started/api/config", requireAuth, async (_, res) => {
+  try {
+    if (!isConfigured()) {
+      return res.status(404).json({ ok: false, error: "Not configured" });
+    }
+    const raw = fs.readFileSync(configPath(), "utf8");
+    const config = JSON.parse(raw);
+    res.json({ ok: true, config });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+app.post("/get-started/api/config", requireAuth, async (req, res) => {
+  try {
+    const { config, restartGateway } = req.body || {};
+    if (!config || typeof config !== "object") {
+      return res.status(400).json({ ok: false, error: "Config must be a non-null object" });
+    }
+    fs.writeFileSync(configPath(), JSON.stringify(config, null, 2), "utf8");
+    let gatewayRestarted = false;
+    if (restartGateway && gateway.isRunning) {
+      await gateway.restart();
+      gatewayRestarted = true;
+    }
+    res.json({ ok: true, gatewayRestarted });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 app.post("/get-started/api/pairing/approve", requireAuth, async (req, res) => {
   const { channel, code } = req.body || {};
   if (!channel || !code) return res.status(400).json({ ok: false, error: "Missing channel or code" });
