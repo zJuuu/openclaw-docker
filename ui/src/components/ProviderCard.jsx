@@ -61,12 +61,15 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
   const [modelsError, setModelsError] = useState('')
   const debounceRef = useRef(null)
 
+  // Discover models when AkashML is selected and API key is provided
   useEffect(() => {
-    if (selectedProvider.id !== 'akashml' || !customBaseUrl?.trim()) {
+    if (selectedProvider.id !== 'akashml' || !authSecret?.trim()) {
       setDiscoveredModels([])
       setModelsError('')
       return
     }
+
+    const baseUrl = customBaseUrl?.trim() || 'https://api.akashml.com/v1'
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
@@ -81,16 +84,11 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            baseUrl: customBaseUrl.trim(),
-            apiKey: authSecret?.trim() || '',
-          }),
+          body: JSON.stringify({ baseUrl, apiKey: authSecret.trim() }),
         })
 
-        // Check if response is JSON
         const contentType = res.headers.get('content-type')
         if (!contentType || !contentType.includes('application/json')) {
-          // In dev mode, API isn't available - silently skip discovery
           setDiscoveredModels([])
           setModelsLoading(false)
           return
@@ -107,7 +105,7 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
 
         if (data.ok && data.models?.length > 0) {
           setDiscoveredModels(data.models)
-          if (!customModel && data.models.length > 0) {
+          if (!customModel || customModel === 'deepseek-ai/DeepSeek-V3.1') {
             const preferred = data.models.find(m => m.id.includes('DeepSeek-V3.1'))
             onChange('customModel', preferred?.id || data.models[0].id)
           }
@@ -118,7 +116,6 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
           }
         }
       } catch (err) {
-        // Silently fail in dev mode or if API unavailable
         setDiscoveredModels([])
         if (!import.meta.env.DEV) {
           setModelsError(err.message)
@@ -126,14 +123,14 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
       } finally {
         setModelsLoading(false)
       }
-    }, 500)
+    }, 800)
 
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
       }
     }
-  }, [selectedProvider.id, customBaseUrl, authSecret])
+  }, [selectedProvider.id, authSecret])
 
   const handleProviderSelect = (providerId) => {
     const provider = AUTH_PROVIDERS.find(p => p.id === providerId)
@@ -210,8 +207,52 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
         </>
       )}
 
-      {/* Custom provider fields */}
-      {isCustom && (
+      {/* AkashML fields: API key first, then model dropdown */}
+      {isCustom && isAkashML && (
+        <>
+          <label>
+            API Key
+            <Tooltip text="Your AkashML API key. Enter it to load available models." />
+          </label>
+          <input
+            type="password"
+            value={authSecret}
+            onChange={(e) => onChange('authSecret', e.target.value)}
+            placeholder="akml-..."
+          />
+
+          <label>
+            Model
+            <Tooltip text="Select a model from AkashML. Models are loaded once you enter your API key." />
+          </label>
+          {modelsLoading && (
+            <div className="model-hint">Discovering available models...</div>
+          )}
+          {modelsError && !modelsLoading && (
+            <div className="model-hint error">Discovery failed: {modelsError}</div>
+          )}
+          {discoveredModels.length > 0 ? (
+            <select
+              value={customModel || ''}
+              onChange={(e) => onChange('customModel', e.target.value)}
+            >
+              {discoveredModels.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.reasoning ? ' (reasoning)' : ''}
+                </option>
+              ))}
+            </select>
+          ) : !modelsLoading && (
+            <select disabled>
+              <option>Enter API key to load models</option>
+            </select>
+          )}
+          <div className="model-hint">You can change the model later in the Config Editor.</div>
+        </>
+      )}
+
+      {/* Custom (non-AkashML) provider fields */}
+      {isCustom && !isAkashML && (
         <>
           <label>
             Base URL
@@ -225,53 +266,15 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
           />
 
           <label>
-            Model Name
+            Model
             <Tooltip text="The model identifier as expected by the API. Check your provider's docs for available models." />
           </label>
-          {modelsLoading && (
-            <div className="model-hint">Discovering available models...</div>
-          )}
-          {modelsError && !modelsLoading && (
-            <div className="model-hint error">Discovery failed: {modelsError}</div>
-          )}
-
-          {/* Show both dropdown and manual input when models are discovered */}
-          {isAkashML && discoveredModels.length > 0 ? (
-            <div className="model-input-group">
-              <select
-                value={customModel || ''}
-                onChange={(e) => onChange('customModel', e.target.value)}
-                className="model-select"
-              >
-                <option value="">Select a model...</option>
-                {discoveredModels.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}{m.reasoning ? ' (reasoning)' : ''}
-                  </option>
-                ))}
-              </select>
-              <span className="model-or">or</span>
-              <input
-                type="text"
-                value={customModel || ''}
-                onChange={(e) => onChange('customModel', e.target.value)}
-                placeholder="Enter model ID"
-                className="model-manual"
-              />
-            </div>
-          ) : (
-            <input
-              type="text"
-              value={customModel || ''}
-              onChange={(e) => onChange('customModel', e.target.value)}
-              placeholder="org/model-name or model-id"
-            />
-          )}
-          {isAkashML && discoveredModels.length > 0 && (
-            <div className="model-hint">
-              {discoveredModels.length} model{discoveredModels.length !== 1 ? 's' : ''} available
-            </div>
-          )}
+          <input
+            type="text"
+            value={customModel || ''}
+            onChange={(e) => onChange('customModel', e.target.value)}
+            placeholder="org/model-name or model-id"
+          />
 
           <label>
             API Key
@@ -281,7 +284,7 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
             type="password"
             value={authSecret}
             onChange={(e) => onChange('authSecret', e.target.value)}
-            placeholder={selectedProvider.id === 'akashml' ? 'akml-...' : 'sk-...'}
+            placeholder="sk-..."
           />
         </>
       )}

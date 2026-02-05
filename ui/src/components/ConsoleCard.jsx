@@ -53,8 +53,16 @@ export default function ConsoleCard() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ cmd: cmdToRun, arg: arg || undefined }),
       })
-      const data = await res.json()
-      setOutput(data.output || JSON.stringify(data, null, 2))
+      const text = await res.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch {
+        setOutput(text || `HTTP ${res.status}`)
+        setLoading(false)
+        return
+      }
+      setOutput(data.output || data.error || JSON.stringify(data, null, 2))
     } catch (err) {
       setOutput(`Error: ${err.message}`)
     } finally {
