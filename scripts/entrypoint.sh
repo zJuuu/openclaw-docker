@@ -67,4 +67,11 @@ echo "[entrypoint] Workspace dir: $WORKSPACE_DIR"
 echo "[entrypoint] Homebrew prefix: $HOMEBREW_PREFIX"
 echo "[entrypoint] npm global prefix: $NPM_CONFIG_PREFIX"
 
+# Start supercronic for heartbeat scheduling
+CRONTAB_FILE="/app/scripts/crontab"
+if [ -f "$CRONTAB_FILE" ] && command -v supercronic &> /dev/null; then
+    echo "[entrypoint] Starting supercronic..."
+    supercronic "$CRONTAB_FILE" &
+fi
+
 exec "$@"

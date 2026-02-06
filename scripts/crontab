@@ -1,0 +1,2 @@
+# Trigger OpenClaw heartbeat every minute to keep cron jobs firing on schedule
+* * * * * /app/scripts/heartbeat.sh

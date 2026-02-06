@@ -175,7 +175,10 @@ class GatewayManager {
   async start() {
     if (!isConfigured()) return { ok: false, error: "OpenClaw not configured" };
     if (this.#state === "running") return { ok: true };
-    if (this.#state === "starting") return this.#startPromise;
+    if (this.#state === "starting") {
+      try { await this.#startPromise; } catch {}
+      return { ok: this.#state === "running" };
+    }
 
     this.#state = "starting";
     this.#startPromise = this.#doStart();

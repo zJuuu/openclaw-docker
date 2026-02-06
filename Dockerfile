@@ -53,6 +53,23 @@ RUN apt-get update \
     ca-certificates build-essential procps curl file git tini \
   && rm -rf /var/lib/apt/lists/*
 
+# Install supercronic
+# https://github.com/aptible/supercronic/releases
+ENV SUPERCRONIC_VERSION=v0.2.42
+RUN SUPERCRONIC_ARCH="$(dpkg --print-architecture)" \
+  && if [ "$SUPERCRONIC_ARCH" = "arm64" ]; then \
+       SUPERCRONIC_SHA1SUM=5193ea5292dda3ad949d0623e178e420c26bfad2; \
+     else \
+       SUPERCRONIC_ARCH=amd64; \
+       SUPERCRONIC_SHA1SUM=b444932b81583b7860849f59fdb921217572ece2; \
+     fi \
+  && SUPERCRONIC="supercronic-linux-${SUPERCRONIC_ARCH}" \
+  && curl -fsSLO "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/${SUPERCRONIC}" \
+  && echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c - \
+  && chmod +x "$SUPERCRONIC" \
+  && mv "$SUPERCRONIC" "/usr/local/bin/${SUPERCRONIC}" \
+  && ln -s "/usr/local/bin/${SUPERCRONIC}" /usr/local/bin/supercronic
+
 WORKDIR /app
 
 COPY package.json ./
@@ -91,6 +108,7 @@ ENV NODE_ENV=production \
 
 COPY --from=ui-build /ui/dist ./ui/dist
 COPY scripts ./scripts
+RUN chmod +x scripts/heartbeat.sh
 COPY src ./src
 COPY --chmod=755 scripts/entrypoint.sh /entrypoint.sh
 
