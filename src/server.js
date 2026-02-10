@@ -440,10 +440,20 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
 
       // Configure browser to use the headless Chrome container via CDP
       const browserCdpUrl = process.env.BROWSER_CDP_URL || "http://chrome:9222";
-      await cli.exec("config", "set", "browser.enabled", "true");
-      await cli.exec("config", "set", "browser.cdpUrl", browserCdpUrl);
-      await cli.exec("config", "set", "browser.attachOnly", "true");
-      await cli.exec("config", "set", "browser.defaultProfile", "openclaw");
+      await cli.exec("config", "set", "--json", "browser", JSON.stringify({
+        enabled: true,
+        attachOnly: true,
+        headless: true,
+        noSandbox: true,
+        cdpUrl: browserCdpUrl,
+        remoteCdpTimeoutMs: 5000,
+        remoteCdpHandshakeTimeoutMs: 10000,
+        defaultProfile: "openclaw",
+        profiles: {
+          openclaw: { cdpUrl: browserCdpUrl, color: "#FF4500" },
+          chrome: { cdpUrl: browserCdpUrl, color: "#00AA00" },
+        },
+      }));
 
       // Configure Akash ML as a custom provider
       if (authChoice === "akashml-api" && customBaseUrl?.trim()) {
