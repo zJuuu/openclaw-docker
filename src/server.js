@@ -438,21 +438,12 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // Allow insecure auth for Control UI behind Akash's HTTPS proxy.
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
 
-      // Configure browser to use the headless Chrome container via CDP
-      const browserCdpUrl = process.env.BROWSER_CDP_URL || "http://chrome:9222";
+      // Configure browser tool to use local Chromium (installed in the Docker image)
       await cli.exec("config", "set", "--json", "browser", JSON.stringify({
         enabled: true,
-        attachOnly: true,
         headless: true,
         noSandbox: true,
-        cdpUrl: browserCdpUrl,
-        remoteCdpTimeoutMs: 5000,
-        remoteCdpHandshakeTimeoutMs: 10000,
-        defaultProfile: "openclaw",
-        profiles: {
-          openclaw: { cdpUrl: browserCdpUrl, color: "#FF4500" },
-          chrome: { cdpUrl: browserCdpUrl, color: "#00AA00" },
-        },
+        executablePath: process.env.CHROME_PATH || "/usr/bin/chromium",
       }));
 
       // Configure Akash ML as a custom provider

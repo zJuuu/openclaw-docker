@@ -51,7 +51,11 @@ FROM node:22-bookworm
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates build-essential procps curl file git tini \
+    chromium fonts-liberation fonts-noto-color-emoji \
   && rm -rf /var/lib/apt/lists/*
+
+# Chromium binary path for OpenClaw browser tool
+ENV CHROME_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
