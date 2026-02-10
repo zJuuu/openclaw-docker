@@ -443,6 +443,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
         enabled: true,
         headless: true,
         noSandbox: true,
+        defaultProfile: "openclaw",
         executablePath: process.env.CHROME_PATH || "/usr/bin/chromium",
       }));
 
