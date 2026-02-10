@@ -542,21 +542,27 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       }
 
       // Configure messaging channels if provided
+      // Note: both channels.<name> AND plugins.entries.<name>.enabled must be set,
+      // because OpenClaw's plugin auto-discovery registers channels with enabled:false
+      // and then skips auto-enabling anything explicitly set to false.
       if (telegramToken?.trim()) {
         const cfg = JSON.stringify({ enabled: true, dmPolicy: "pairing", botToken: telegramToken.trim(), groupPolicy: "allowlist" });
         await cli.exec("config", "set", "--json", "channels.telegram", cfg);
+        await cli.exec("config", "set", "--json", "plugins.entries.telegram", JSON.stringify({ enabled: true }));
         output += "\n[telegram] configured\n";
       }
 
       if (discordToken?.trim()) {
         const cfg = JSON.stringify({ enabled: true, token: discordToken.trim(), groupPolicy: "allowlist", dm: { policy: "pairing" } });
         await cli.exec("config", "set", "--json", "channels.discord", cfg);
+        await cli.exec("config", "set", "--json", "plugins.entries.discord", JSON.stringify({ enabled: true }));
         output += "\n[discord] configured\n";
       }
 
       if (slackBotToken?.trim() || slackAppToken?.trim()) {
         const cfg = JSON.stringify({ enabled: true, botToken: slackBotToken?.trim(), appToken: slackAppToken?.trim() });
         await cli.exec("config", "set", "--json", "channels.slack", cfg);
+        await cli.exec("config", "set", "--json", "plugins.entries.slack", JSON.stringify({ enabled: true }));
         output += "\n[slack] configured\n";
       }
 
