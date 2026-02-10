@@ -368,11 +368,6 @@ app.get("/get-started/api/status", requireAuth, async (_, res) => {
 
 app.post("/get-started/api/run", requireAuth, async (req, res) => {
   try {
-    if (isConfigured()) {
-      await gateway.ensure();
-      return res.json({ ok: true, output: "Already configured. Use Reset to reconfigure.\n" });
-    }
-
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
@@ -384,40 +379,53 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
     const isCustomEndpoint = authChoice === "custom-openai";
     const effectiveAuthChoice = isAkashML ? "skip" : (isCustomEndpoint ? "openai-api-key" : authChoice);
 
-    const onboardArgs = [
-      "--non-interactive", "--accept-risk", "--json",
-      "--no-install-daemon", "--skip-health",
-      "--workspace", WORKSPACE_DIR,
-      "--gateway-bind", "loopback",
-      "--gateway-port", String(INTERNAL_GATEWAY_PORT),
-      "--gateway-auth", "token",
-      "--gateway-token", GATEWAY_TOKEN,
-      "--flow", "quickstart",
-    ];
+    let output = "";
+    const alreadyConfigured = isConfigured();
 
-    if (effectiveAuthChoice) {
-      onboardArgs.push("--auth-choice", effectiveAuthChoice);
+    // Skip onboard if config already exists (e.g. retry after partial failure)
+    if (!alreadyConfigured) {
+      const onboardArgs = [
+        "--non-interactive", "--accept-risk", "--json",
+        "--no-install-daemon", "--skip-health",
+        "--workspace", WORKSPACE_DIR,
+        "--gateway-bind", "loopback",
+        "--gateway-port", String(INTERNAL_GATEWAY_PORT),
+        "--gateway-auth", "token",
+        "--gateway-token", GATEWAY_TOKEN,
+        "--flow", "quickstart",
+      ];
 
-      const apiKeyFlags = {
-        "openai-api-key": "--openai-api-key",
-        "apiKey": "--anthropic-api-key",
-        "openrouter-api-key": "--openrouter-api-key",
-        "moonshot-api-key": "--moonshot-api-key",
-        "gemini-api-key": "--gemini-api-key",
-      };
+      if (effectiveAuthChoice) {
+        onboardArgs.push("--auth-choice", effectiveAuthChoice);
 
-      if (apiKeyFlags[effectiveAuthChoice] && authSecret?.trim()) {
-        onboardArgs.push(apiKeyFlags[effectiveAuthChoice], authSecret.trim());
-      } else if (isCustomEndpoint) {
-        // Custom endpoint might not need an API key, use a placeholder
-        onboardArgs.push("--openai-api-key", authSecret?.trim() || "sk-no-key-required");
+        const apiKeyFlags = {
+          "openai-api-key": "--openai-api-key",
+          "apiKey": "--anthropic-api-key",
+          "openrouter-api-key": "--openrouter-api-key",
+          "moonshot-api-key": "--moonshot-api-key",
+          "gemini-api-key": "--gemini-api-key",
+        };
+
+        if (apiKeyFlags[effectiveAuthChoice] && authSecret?.trim()) {
+          onboardArgs.push(apiKeyFlags[effectiveAuthChoice], authSecret.trim());
+        } else if (isCustomEndpoint) {
+          // Custom endpoint might not need an API key, use a placeholder
+          onboardArgs.push("--openai-api-key", authSecret?.trim() || "sk-no-key-required");
+        }
       }
+
+      const result = await cli.exec("onboard", ...onboardArgs);
+      output = result.output;
+
+      if (!result.success || !isConfigured()) {
+        res.json({ ok: false, output });
+        return;
+      }
+    } else {
+      output += "Config exists, re-applying provider and channel settings...\n";
     }
 
-    const result = await cli.exec("onboard", ...onboardArgs);
-    let output = result.output;
-
-    if (result.success && isConfigured()) {
+    {
       // Configure gateway settings
       await cli.exec("config", "set", "gateway.auth.mode", "token");
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
@@ -429,6 +437,13 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       await cli.exec("config", "set", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]));
       // Allow insecure auth for Control UI behind Akash's HTTPS proxy.
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
+
+      // Configure browser to use the headless Chrome container via CDP
+      const browserCdpUrl = process.env.BROWSER_CDP_URL || "http://chrome:9222";
+      await cli.exec("config", "set", "browser.enabled", "true");
+      await cli.exec("config", "set", "browser.cdpUrl", browserCdpUrl);
+      await cli.exec("config", "set", "browser.attachOnly", "true");
+      await cli.exec("config", "set", "browser.defaultProfile", "openclaw");
 
       // Configure Akash ML as a custom provider
       if (authChoice === "akashml-api" && customBaseUrl?.trim()) {
@@ -538,7 +553,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       await gateway.restart();
     }
 
-    res.json({ ok: result.success, output });
+    res.json({ ok: true, output });
   } catch (err) {
     res.status(500).json({ ok: false, output: String(err) });
   }
