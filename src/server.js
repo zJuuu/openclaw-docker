@@ -857,6 +857,8 @@ app.get("/get-started", (_, res) => {
 const proxy = httpProxy.createProxyServer({ target: GATEWAY_TARGET, ws: true, xfwd: true });
 proxy.on("error", err => console.error("[proxy]", err));
 
+const TELEGRAM_WEBHOOK_TARGET = `http://127.0.0.1:8787`;
+
 // Public paths that don't require session auth (webhooks use their own signature validation)
 const PUBLIC_PATHS = [
   "/telegram-webhook",  // Telegram webhook - uses webhookSecret validation
@@ -890,6 +892,10 @@ app.use(async (req, res) => {
     if (!result.ok) {
       return res.status(503).send(`Gateway not ready: ${result.error}`);
     }
+  }
+
+  if (req.path.startsWith("/telegram-webhook")) {
+    return proxy.web(req, res, { target: TELEGRAM_WEBHOOK_TARGET });
   }
 
   proxy.web(req, res);
