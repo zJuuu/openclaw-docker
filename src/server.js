@@ -550,31 +550,16 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // because OpenClaw's plugin auto-discovery registers channels with enabled:false
       // and then skips auto-enabling anything explicitly set to false.
       if (telegramToken?.trim()) {
-        // Derive public URL from the request (user is accessing setup UI via the public URL)
-        const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
-        const host = req.headers["x-forwarded-host"] || req.headers.host;
-        const publicUrl = process.env.PUBLIC_URL || (host ? `${proto}://${host}` : "");
-
-        const webhookSecret = crypto.randomBytes(32).toString("hex");
         const telegramCfg = {
           enabled: true,
           dmPolicy: "pairing",
           botToken: telegramToken.trim(),
           groupPolicy: "allowlist",
-          webhookSecret,
         };
-
-        // Use webhook mode when public URL is available (more reliable than long-polling)
-        if (publicUrl) {
-          telegramCfg.webhookUrl = `${publicUrl}/telegram-webhook`;
-          output += `\n[telegram] webhook mode: ${telegramCfg.webhookUrl}\n`;
-        } else {
-          output += "\n[telegram] long-polling mode (set PUBLIC_URL for webhook mode)\n";
-        }
 
         await cli.exec("config", "set", "--json", "channels.telegram", JSON.stringify(telegramCfg));
         await cli.exec("config", "set", "--json", "plugins.entries.telegram", JSON.stringify({ enabled: true }));
-        output += "[telegram] configured\n";
+        output += "\n[telegram] configured (long-polling)\n";
       }
 
       if (discordToken?.trim()) {
@@ -857,11 +842,8 @@ app.get("/get-started", (_, res) => {
 const proxy = httpProxy.createProxyServer({ target: GATEWAY_TARGET, ws: true, xfwd: true });
 proxy.on("error", err => console.error("[proxy]", err));
 
-const TELEGRAM_WEBHOOK_TARGET = `http://127.0.0.1:8787`;
-
 // Public paths that don't require session auth (webhooks use their own signature validation)
 const PUBLIC_PATHS = [
-  "/telegram-webhook",  // Telegram webhook - uses webhookSecret validation
   "/slack/events",      // Slack webhook - uses Slack signing secret
   "/line/webhook",      // Line webhook - uses Line signature validation
   "/avatar/",           // Public avatar images
@@ -892,10 +874,6 @@ app.use(async (req, res) => {
     if (!result.ok) {
       return res.status(503).send(`Gateway not ready: ${result.error}`);
     }
-  }
-
-  if (req.path.startsWith("/telegram-webhook")) {
-    return proxy.web(req, res, { target: TELEGRAM_WEBHOOK_TARGET });
   }
 
   proxy.web(req, res);
