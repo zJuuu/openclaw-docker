@@ -62,7 +62,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
-RUN npm install -g clawhub@latest && clawhub install sonoscli
+RUN npm install -g clawhub@latest
 
 COPY --from=openclaw-build /openclaw /openclaw
 COPY --from=linuxbrew-install /home/linuxbrew/.linuxbrew /home/linuxbrew/.linuxbrew
