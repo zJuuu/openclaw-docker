@@ -51,11 +51,10 @@ FROM node:22-bookworm
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates build-essential procps curl file git tini \
-    chromium fonts-liberation fonts-noto-color-emoji \
+    chromium fonts-liberation fonts-noto-color-emoji xvfb \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --chmod=755 scripts/chromium-wrapper.sh /usr/local/bin/chromium-wrapper
-ENV CHROME_PATH=/usr/local/bin/chromium-wrapper
+ENV CHROME_PATH=/usr/bin/chromium
 
 WORKDIR /app
 

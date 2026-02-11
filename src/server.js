@@ -454,10 +454,9 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // Configure browser tool to use local Chromium (installed in the Docker image)
       await cli.exec("config", "set", "--json", "browser", JSON.stringify({
         enabled: true,
-        headless: true,
         noSandbox: true,
         defaultProfile: "openclaw",
-        executablePath: process.env.CHROME_PATH || "/usr/local/bin/chromium-wrapper",
+        executablePath: process.env.CHROME_PATH || "/usr/bin/chromium",
       }));
 
       // Configure Akash ML as a custom provider
