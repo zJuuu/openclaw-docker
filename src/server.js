@@ -25,7 +25,15 @@ const GATEWAY_TARGET = `http://127.0.0.1:${INTERNAL_GATEWAY_PORT}`;
 const OPENCLAW_ENTRY = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 
-// Akash ML model discovery
+// Akash ML known model catalog (enrichment data from akashml.com)
+const AKASHML_CATALOG = {
+  "deepseek-ai/DeepSeek-V3.2": { name: "DeepSeek V3.2", contextWindow: 128000, reasoning: true, cost: { input: 0.28, output: 0.42 } },
+  "deepseek-ai/DeepSeek-V3.1": { name: "DeepSeek V3.1", contextWindow: 128000, reasoning: true, cost: { input: 0.27, output: 1.00 } },
+  "Qwen/Qwen3-30B-A3B": { name: "Qwen3 30B A3B", contextWindow: 32000, reasoning: true, cost: { input: 0.07, output: 0.27 } },
+  "meta-llama/Llama-3.3-70B-Instruct": { name: "Llama 3.3 70B", contextWindow: 128000, reasoning: false, cost: { input: 0.13, output: 0.40 } },
+};
+
+// Akash ML model discovery — fetches /models and enriches with catalog data
 async function discoverAkashMLModels(baseUrl, apiKey) {
   try {
     const response = await fetch(`${baseUrl}/models`, {
@@ -42,15 +50,20 @@ async function discoverAkashMLModels(baseUrl, apiKey) {
     }
     return data.data.map((model) => {
       const id = model.id;
-      const name = id.split("/").pop() || id;
-      const isReasoning = id.toLowerCase().includes("r1") || id.toLowerCase().includes("reasoning");
+      const catalog = AKASHML_CATALOG[id];
+      const name = catalog?.name || id.split("/").pop() || id;
       return {
         id,
         name,
-        reasoning: isReasoning,
+        reasoning: catalog?.reasoning ?? /r1|reasoning/i.test(id),
         input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
+        cost: {
+          input: catalog?.cost?.input ?? 0,
+          output: catalog?.cost?.output ?? 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        contextWindow: catalog?.contextWindow ?? 128000,
         maxTokens: 8192,
       };
     });
@@ -487,10 +500,9 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
           };
           await cli.exec("config", "set", "--json", "models.providers.akashml", JSON.stringify(providerConfig));
 
-          // Use specified model, or prefer DeepSeek-V3.1 if available, otherwise first discovered
           let primaryModelId = customModel?.trim();
           if (!primaryModelId) {
-            const preferredModel = models.find(m => m.id.includes("DeepSeek-V3.1"));
+            const preferredModel = models.find(m => m.id.includes("DeepSeek-V3.2")) || models.find(m => m.id.includes("DeepSeek-V3"));
             primaryModelId = preferredModel?.id || models[0].id;
           }
           const modelKey = `akashml/${primaryModelId}`;

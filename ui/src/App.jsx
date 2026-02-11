@@ -16,7 +16,7 @@ export default function App() {
     authChoice: 'akashml-api',
     authSecret: '',
     customBaseUrl: 'https://api.akashml.com/v1',
-    customModel: 'deepseek-ai/DeepSeek-V3.1',
+    customModel: 'deepseek-ai/DeepSeek-V3.2',
     telegramToken: '',
     discordToken: '',
     slackBotToken: '',

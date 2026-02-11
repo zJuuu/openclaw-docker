@@ -8,7 +8,7 @@ const PRIMARY_PROVIDER = {
   isCustom: true,
   preset: {
     baseUrl: 'https://api.akashml.com/v1',
-    model: 'deepseek-ai/DeepSeek-V3.1',
+    model: 'deepseek-ai/DeepSeek-V3.2',
   },
 }
 
@@ -111,8 +111,8 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
 
         if (data.ok && data.models?.length > 0) {
           setDiscoveredModels(data.models)
-          if (!customModel || customModel === 'deepseek-ai/DeepSeek-V3.1') {
-            const preferred = data.models.find(m => m.id.includes('DeepSeek-V3.1'))
+          if (!customModel || customModel === 'deepseek-ai/DeepSeek-V3.2') {
+            const preferred = data.models.find(m => m.id.includes('DeepSeek-V3.2')) || data.models.find(m => m.id.includes('DeepSeek-V3'))
             onChange('customModel', preferred?.id || data.models[0].id)
           }
         } else {
