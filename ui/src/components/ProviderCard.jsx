@@ -1,17 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
 import Tooltip from './Tooltip'
 
-const AUTH_PROVIDERS = [
-  {
-    id: 'akashml',
-    name: 'AkashML',
-    methods: [{ id: 'akashml-api', name: 'API Key' }],
-    isCustom: true,
-    preset: {
-      baseUrl: 'https://api.akashml.com/v1',
-      model: 'deepseek-ai/DeepSeek-V3.1',
-    },
+const PRIMARY_PROVIDER = {
+  id: 'akashml',
+  name: 'AkashML',
+  methods: [{ id: 'akashml-api', name: 'API Key' }],
+  isCustom: true,
+  preset: {
+    baseUrl: 'https://api.akashml.com/v1',
+    model: 'deepseek-ai/DeepSeek-V3.1',
   },
+}
+
+const EXPERIMENTAL_PROVIDERS = [
   {
     id: 'anthropic',
     name: 'Anthropic',
@@ -51,10 +52,15 @@ const AUTH_PROVIDERS = [
   },
 ]
 
+const AUTH_PROVIDERS = [PRIMARY_PROVIDER, ...EXPERIMENTAL_PROVIDERS]
+
 export default function ProviderCard({ authChoice, authSecret, customBaseUrl, customModel, onChange, embedded }) {
   const selectedProvider = AUTH_PROVIDERS.find(p =>
     p.methods.some(m => m.id === authChoice)
   ) || AUTH_PROVIDERS[0]
+
+  const isExperimentalSelected = EXPERIMENTAL_PROVIDERS.some(p => p.id === selectedProvider.id)
+  const [showExperimental, setShowExperimental] = useState(isExperimentalSelected)
 
   const [discoveredModels, setDiscoveredModels] = useState([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -155,23 +161,54 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
 
   const content = (
     <>
-      {/* Provider selector as button group */}
+      {/* Provider selector */}
       <div className="provider-label" style={embedded ? { marginTop: 0 } : undefined}>
         Provider
         <Tooltip text="Select your AI model provider. AkashML is recommended for decentralized inference." />
       </div>
       <div className="provider-selector">
-        {AUTH_PROVIDERS.map(p => (
-          <button
-            key={p.id}
-            type="button"
-            className={`provider-btn ${selectedProvider.id === p.id ? 'active' : ''}`}
-            onClick={() => handleProviderSelect(p.id)}
-          >
-            {p.name}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`provider-btn ${selectedProvider.id === 'akashml' ? 'active' : ''}`}
+          onClick={() => { handleProviderSelect('akashml'); setShowExperimental(false) }}
+        >
+          AkashML
+        </button>
+        <button
+          type="button"
+          className={`provider-btn provider-btn-experimental ${showExperimental && selectedProvider.id !== 'akashml' ? 'active' : ''}`}
+          onClick={() => setShowExperimental(prev => !prev)}
+        >
+          Other (Experimental) {showExperimental ? '▴' : '▾'}
+        </button>
       </div>
+
+      {/* AkashML promo */}
+      {selectedProvider.id === 'akashml' && (
+        <div className="akashml-promo">
+          Get <strong>$100 in free credits</strong> when you sign up at{' '}
+          <a href="https://akashml.com" target="_blank" rel="noopener noreferrer">akashml.com</a>
+        </div>
+      )}
+
+      {/* Experimental providers */}
+      {showExperimental && (
+        <div className="provider-selector experimental-providers">
+          {EXPERIMENTAL_PROVIDERS.map(p => (
+            <button
+              key={p.id}
+              type="button"
+              className={`provider-btn ${selectedProvider.id === p.id ? 'active' : ''}`}
+              onClick={() => handleProviderSelect(p.id)}
+            >
+              {p.name}
+            </button>
+          ))}
+          <div className="experimental-hint">
+            These providers may have limited support. For the best experience, use AkashML.
+          </div>
+        </div>
+      )}
 
       {/* Auth method - only show if provider has multiple methods */}
       {!isCustom && hasMultipleMethods && (

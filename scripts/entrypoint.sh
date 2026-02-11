@@ -67,4 +67,8 @@ echo "[entrypoint] Workspace dir: $WORKSPACE_DIR"
 echo "[entrypoint] Homebrew prefix: $HOMEBREW_PREFIX"
 echo "[entrypoint] npm global prefix: $NPM_CONFIG_PREFIX"
 
+# Virtual display for Chromium
+Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
+export DISPLAY=:99
+
 exec "$@"

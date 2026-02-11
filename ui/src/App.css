@@ -783,6 +783,47 @@ a.btn-secondary:hover {
   color: #171717;
 }
 
+.provider-btn-experimental {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.experimental-providers {
+  margin-top: 4px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.experimental-hint {
+  width: 100%;
+  font-size: 0.7rem;
+  color: #737373;
+  margin-top: 6px;
+}
+
+.akashml-promo {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #D4D4D4;
+  line-height: 1.5;
+}
+
+.akashml-promo a {
+  color: #F5F5F5;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.akashml-promo a:hover {
+  color: #FFFFFF;
+}
+
 /* Model input group */
 .model-input-group {
   display: flex;

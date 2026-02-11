@@ -230,7 +230,17 @@ class GatewayManager {
 
     this.#process.on("exit", (code, signal) => {
       console.log(`[gateway] exited (code=${code}, signal=${signal})`);
+      const wasIntentional = this.#state === "stopping";
       this.#cleanup();
+
+      // Auto-restart on unexpected exit (not a manual stop)
+      if (!wasIntentional) {
+        const delay = 5000;
+        console.log(`[gateway] unexpected exit, restarting in ${delay / 1000}s...`);
+        setTimeout(() => this.start().catch(err => {
+          console.error(`[gateway] auto-restart failed: ${err.message}`);
+        }), delay);
+      }
     });
 
     const healthy = await this.#waitForHealth(60000);
@@ -368,11 +378,6 @@ app.get("/get-started/api/status", requireAuth, async (_, res) => {
 
 app.post("/get-started/api/run", requireAuth, async (req, res) => {
   try {
-    if (isConfigured()) {
-      await gateway.ensure();
-      return res.json({ ok: true, output: "Already configured. Use Reset to reconfigure.\n" });
-    }
-
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
@@ -384,40 +389,53 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
     const isCustomEndpoint = authChoice === "custom-openai";
     const effectiveAuthChoice = isAkashML ? "skip" : (isCustomEndpoint ? "openai-api-key" : authChoice);
 
-    const onboardArgs = [
-      "--non-interactive", "--accept-risk", "--json",
-      "--no-install-daemon", "--skip-health",
-      "--workspace", WORKSPACE_DIR,
-      "--gateway-bind", "loopback",
-      "--gateway-port", String(INTERNAL_GATEWAY_PORT),
-      "--gateway-auth", "token",
-      "--gateway-token", GATEWAY_TOKEN,
-      "--flow", "quickstart",
-    ];
+    let output = "";
+    const alreadyConfigured = isConfigured();
 
-    if (effectiveAuthChoice) {
-      onboardArgs.push("--auth-choice", effectiveAuthChoice);
+    // Skip onboard if config already exists (e.g. retry after partial failure)
+    if (!alreadyConfigured) {
+      const onboardArgs = [
+        "--non-interactive", "--accept-risk", "--json",
+        "--no-install-daemon", "--skip-health",
+        "--workspace", WORKSPACE_DIR,
+        "--gateway-bind", "loopback",
+        "--gateway-port", String(INTERNAL_GATEWAY_PORT),
+        "--gateway-auth", "token",
+        "--gateway-token", GATEWAY_TOKEN,
+        "--flow", "quickstart",
+      ];
 
-      const apiKeyFlags = {
-        "openai-api-key": "--openai-api-key",
-        "apiKey": "--anthropic-api-key",
-        "openrouter-api-key": "--openrouter-api-key",
-        "moonshot-api-key": "--moonshot-api-key",
-        "gemini-api-key": "--gemini-api-key",
-      };
+      if (effectiveAuthChoice) {
+        onboardArgs.push("--auth-choice", effectiveAuthChoice);
 
-      if (apiKeyFlags[effectiveAuthChoice] && authSecret?.trim()) {
-        onboardArgs.push(apiKeyFlags[effectiveAuthChoice], authSecret.trim());
-      } else if (isCustomEndpoint) {
-        // Custom endpoint might not need an API key, use a placeholder
-        onboardArgs.push("--openai-api-key", authSecret?.trim() || "sk-no-key-required");
+        const apiKeyFlags = {
+          "openai-api-key": "--openai-api-key",
+          "apiKey": "--anthropic-api-key",
+          "openrouter-api-key": "--openrouter-api-key",
+          "moonshot-api-key": "--moonshot-api-key",
+          "gemini-api-key": "--gemini-api-key",
+        };
+
+        if (apiKeyFlags[effectiveAuthChoice] && authSecret?.trim()) {
+          onboardArgs.push(apiKeyFlags[effectiveAuthChoice], authSecret.trim());
+        } else if (isCustomEndpoint) {
+          // Custom endpoint might not need an API key, use a placeholder
+          onboardArgs.push("--openai-api-key", authSecret?.trim() || "sk-no-key-required");
+        }
       }
+
+      const result = await cli.exec("onboard", ...onboardArgs);
+      output = result.output;
+
+      if (!result.success || !isConfigured()) {
+        res.json({ ok: false, output });
+        return;
+      }
+    } else {
+      output += "Config exists, re-applying provider and channel settings...\n";
     }
 
-    const result = await cli.exec("onboard", ...onboardArgs);
-    let output = result.output;
-
-    if (result.success && isConfigured()) {
+    {
       // Configure gateway settings
       await cli.exec("config", "set", "gateway.auth.mode", "token");
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
@@ -429,6 +447,15 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       await cli.exec("config", "set", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]));
       // Allow insecure auth for Control UI behind Akash's HTTPS proxy.
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
+
+      // Configure browser tool to use local Chromium (installed in the Docker image)
+      await cli.exec("config", "set", "--json", "browser", JSON.stringify({
+        enabled: true,
+        headless: true,
+        noSandbox: true,
+        defaultProfile: "openclaw",
+        executablePath: process.env.CHROME_PATH || "/usr/bin/chromium",
+      }));
 
       // Configure Akash ML as a custom provider
       if (authChoice === "akashml-api" && customBaseUrl?.trim()) {
@@ -517,28 +544,40 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       }
 
       // Configure messaging channels if provided
+      // Note: both channels.<name> AND plugins.entries.<name>.enabled must be set,
+      // because OpenClaw's plugin auto-discovery registers channels with enabled:false
+      // and then skips auto-enabling anything explicitly set to false.
       if (telegramToken?.trim()) {
-        const cfg = JSON.stringify({ enabled: true, dmPolicy: "pairing", botToken: telegramToken.trim(), groupPolicy: "allowlist" });
-        await cli.exec("config", "set", "--json", "channels.telegram", cfg);
-        output += "\n[telegram] configured\n";
+        const telegramCfg = {
+          enabled: true,
+          dmPolicy: "pairing",
+          botToken: telegramToken.trim(),
+          groupPolicy: "allowlist",
+        };
+
+        await cli.exec("config", "set", "--json", "channels.telegram", JSON.stringify(telegramCfg));
+        await cli.exec("config", "set", "--json", "plugins.entries.telegram", JSON.stringify({ enabled: true }));
+        output += "\n[telegram] configured (long-polling)\n";
       }
 
       if (discordToken?.trim()) {
         const cfg = JSON.stringify({ enabled: true, token: discordToken.trim(), groupPolicy: "allowlist", dm: { policy: "pairing" } });
         await cli.exec("config", "set", "--json", "channels.discord", cfg);
+        await cli.exec("config", "set", "--json", "plugins.entries.discord", JSON.stringify({ enabled: true }));
         output += "\n[discord] configured\n";
       }
 
       if (slackBotToken?.trim() || slackAppToken?.trim()) {
         const cfg = JSON.stringify({ enabled: true, botToken: slackBotToken?.trim(), appToken: slackAppToken?.trim() });
         await cli.exec("config", "set", "--json", "channels.slack", cfg);
+        await cli.exec("config", "set", "--json", "plugins.entries.slack", JSON.stringify({ enabled: true }));
         output += "\n[slack] configured\n";
       }
 
       await gateway.restart();
     }
 
-    res.json({ ok: result.success, output });
+    res.json({ ok: true, output });
   } catch (err) {
     res.status(500).json({ ok: false, output: String(err) });
   }
