@@ -312,8 +312,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "1mb" }));
-app.use("/get-started/import", express.raw({ type: "application/gzip", limit: "100mb" }));
+app.use(express.json({ limit: "5mb" }));
+app.use("/get-started/import", express.raw({ type: "application/gzip", limit: Infinity }));
 
 // Auth middleware
 function requireAuth(req, res, next) {

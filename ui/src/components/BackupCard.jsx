@@ -61,12 +61,12 @@ export default function BackupCard({ onRefresh }) {
         headers: { 'content-type': 'application/gzip' },
         body: buf,
       })
-      const data = await res.json()
-      setOutput(prev => prev + (data.message || JSON.stringify(data)) + '\n')
-      if (res.ok) {
-        setOutput(prev => prev + 'Backup restored successfully!\n')
-        onRefresh()
+      if (!res.ok) {
+        throw new Error(await res.text() || `Upload failed (HTTP ${res.status})`)
       }
+      const data = await res.json()
+      setOutput(prev => prev + (data.message || 'Backup restored successfully!') + '\n')
+      onRefresh()
     } catch (err) {
       setOutput(prev => prev + `Error: ${err.message}\n`)
     } finally {
