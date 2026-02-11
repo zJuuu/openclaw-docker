@@ -1,7 +1,6 @@
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -313,7 +312,6 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "5mb" }));
-app.use("/get-started/import", express.raw({ type: "application/gzip", limit: Infinity }));
 
 // Auth middleware
 function requireAuth(req, res, next) {
@@ -798,28 +796,25 @@ app.get("/get-started/export", requireAuth, async (_, res) => {
   stream.pipe(res);
 });
 
-// Backup import
+// Backup import (streaming — pipes directly into tar extract)
 app.post("/get-started/import", requireAuth, async (req, res) => {
   try {
     if (!STATE_DIR.startsWith(DATA_DIR) || !WORKSPACE_DIR.startsWith(DATA_DIR)) {
       return res.status(400).json({ ok: false, error: "Import only works when data dirs are under /data" });
     }
 
-    const buf = Buffer.isBuffer(req.body) ? req.body : null;
-    if (!buf || !buf.length) return res.status(400).json({ ok: false, error: "Empty or invalid file" });
-
-    // Stop gateway before importing
     await gateway.stop();
 
-    const tmpPath = path.join(os.tmpdir(), `import-${Date.now()}.tar.gz`);
-    fs.writeFileSync(tmpPath, buf);
-    await tar.x({ file: tmpPath, cwd: DATA_DIR, gzip: true });
-    fs.rmSync(tmpPath, { force: true });
+    await new Promise((resolve, reject) => {
+      const extract = tar.x({ cwd: DATA_DIR, gzip: true });
+      extract.on("finish", resolve);
+      extract.on("error", reject);
+      req.on("error", reject);
+      req.pipe(extract);
+    });
 
-    // Re-apply current gateway token to imported config (so UI token matches)
     if (isConfigured()) {
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
-      // Also update the token file
       fs.writeFileSync(path.join(STATE_DIR, "gateway.token"), GATEWAY_TOKEN, { mode: 0o600 });
       await gateway.start();
     }
