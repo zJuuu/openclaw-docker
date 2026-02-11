@@ -457,7 +457,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
         headless: true,
         noSandbox: true,
         defaultProfile: "openclaw",
-        executablePath: process.env.CHROME_PATH || "/usr/bin/chromium",
+        executablePath: process.env.CHROME_PATH || "/usr/local/bin/chromium-wrapper",
       }));
 
       // Configure Akash ML as a custom provider

@@ -54,8 +54,8 @@ RUN apt-get update \
     chromium fonts-liberation fonts-noto-color-emoji \
   && rm -rf /var/lib/apt/lists/*
 
-# Chromium binary path for OpenClaw browser tool
-ENV CHROME_PATH=/usr/bin/chromium
+COPY --chmod=755 scripts/chromium-wrapper.sh /usr/local/bin/chromium-wrapper
+ENV CHROME_PATH=/usr/local/bin/chromium-wrapper
 
 WORKDIR /app
 
