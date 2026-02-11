@@ -230,7 +230,17 @@ class GatewayManager {
 
     this.#process.on("exit", (code, signal) => {
       console.log(`[gateway] exited (code=${code}, signal=${signal})`);
+      const wasIntentional = this.#state === "stopping";
       this.#cleanup();
+
+      // Auto-restart on unexpected exit (not a manual stop)
+      if (!wasIntentional) {
+        const delay = 5000;
+        console.log(`[gateway] unexpected exit, restarting in ${delay / 1000}s...`);
+        setTimeout(() => this.start().catch(err => {
+          console.error(`[gateway] auto-restart failed: ${err.message}`);
+        }), delay);
+      }
     });
 
     const healthy = await this.#waitForHealth(60000);
@@ -438,6 +448,9 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // Allow insecure auth for Control UI behind Akash's HTTPS proxy.
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
 
+      // Allow the agent to restart the gateway on failures
+      await cli.exec("config", "set", "commands.restart", "true");
+
       // Configure browser tool to use local Chromium (installed in the Docker image)
       await cli.exec("config", "set", "--json", "browser", JSON.stringify({
         enabled: true,
@@ -538,10 +551,31 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // because OpenClaw's plugin auto-discovery registers channels with enabled:false
       // and then skips auto-enabling anything explicitly set to false.
       if (telegramToken?.trim()) {
-        const cfg = JSON.stringify({ enabled: true, dmPolicy: "pairing", botToken: telegramToken.trim(), groupPolicy: "allowlist" });
-        await cli.exec("config", "set", "--json", "channels.telegram", cfg);
+        // Derive public URL from the request (user is accessing setup UI via the public URL)
+        const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+        const host = req.headers["x-forwarded-host"] || req.headers.host;
+        const publicUrl = process.env.PUBLIC_URL || (host ? `${proto}://${host}` : "");
+
+        const webhookSecret = crypto.randomBytes(32).toString("hex");
+        const telegramCfg = {
+          enabled: true,
+          dmPolicy: "pairing",
+          botToken: telegramToken.trim(),
+          groupPolicy: "allowlist",
+          webhookSecret,
+        };
+
+        // Use webhook mode when public URL is available (more reliable than long-polling)
+        if (publicUrl) {
+          telegramCfg.webhookUrl = `${publicUrl}/telegram-webhook`;
+          output += `\n[telegram] webhook mode: ${telegramCfg.webhookUrl}\n`;
+        } else {
+          output += "\n[telegram] long-polling mode (set PUBLIC_URL for webhook mode)\n";
+        }
+
+        await cli.exec("config", "set", "--json", "channels.telegram", JSON.stringify(telegramCfg));
         await cli.exec("config", "set", "--json", "plugins.entries.telegram", JSON.stringify({ enabled: true }));
-        output += "\n[telegram] configured\n";
+        output += "[telegram] configured\n";
       }
 
       if (discordToken?.trim()) {
@@ -826,6 +860,7 @@ proxy.on("error", err => console.error("[proxy]", err));
 
 // Public paths that don't require session auth (webhooks use their own signature validation)
 const PUBLIC_PATHS = [
+  "/telegram-webhook",  // Telegram webhook - uses webhookSecret validation
   "/slack/events",      // Slack webhook - uses Slack signing secret
   "/line/webhook",      // Line webhook - uses Line signature validation
   "/avatar/",           // Public avatar images
