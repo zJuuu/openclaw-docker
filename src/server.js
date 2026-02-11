@@ -448,9 +448,6 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // Allow insecure auth for Control UI behind Akash's HTTPS proxy.
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
 
-      // Allow the agent to restart the gateway on failures
-      await cli.exec("config", "set", "commands.restart", "true");
-
       // Configure browser tool to use local Chromium (installed in the Docker image)
       await cli.exec("config", "set", "--json", "browser", JSON.stringify({
         enabled: true,
