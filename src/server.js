@@ -283,15 +283,26 @@ class GatewayManager {
     this.#state = "stopping";
     const proc = this.#process;
 
-    proc.kill("SIGTERM");
-    await new Promise((r) => setTimeout(r, 500));
+    // Wait for the process to actually exit (not just signal delivery)
+    const exitPromise = new Promise((resolve) => {
+      proc.on("exit", resolve);
+    });
 
-    if (!proc.killed) {
-      proc.kill("SIGKILL");
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    proc.kill("SIGTERM");
+
+    // Force kill after 5s if it hasn't exited gracefully
+    const forceKillTimeout = setTimeout(() => {
+      try { proc.kill("SIGKILL"); } catch {}
+    }, 5000);
+
+    await exitPromise;
+    clearTimeout(forceKillTimeout);
 
     this.#cleanup();
+
+    // Brief delay to let the OS release the port
+    await new Promise((r) => setTimeout(r, 500));
+
     return { ok: true };
   }
 
@@ -941,6 +952,8 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
     if (!memoryOnly && isConfigured()) {
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
       fs.writeFileSync(path.join(STATE_DIR, "gateway.token"), GATEWAY_TOKEN, { mode: 0o600 });
+      // Clean up any stale gateway lock/pid files that came from the imported backup
+      await cli.exec("gateway", "stop").catch(() => {});
       await gateway.start();
     } else if (memoryOnly && gateway.isRunning) {
       await gateway.restart();
