@@ -938,6 +938,15 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
       if (fs.existsSync(srcSkills)) {
         fs.cpSync(srcSkills, path.join(STATE_DIR, "skills"), { recursive: true, force: true });
       }
+
+      // Restore .openclaw/devices/ and .openclaw/identity/ (pairing state)
+      // so paired Telegram/Discord users don't need to re-pair
+      for (const sub of ["devices", "identity"]) {
+        const src = path.join(sourceDir, stateName, sub);
+        if (fs.existsSync(src)) {
+          fs.cpSync(src, path.join(STATE_DIR, sub), { recursive: true, force: true });
+        }
+      }
     } else {
       // Full restore — copy everything
       for (const item of fs.readdirSync(sourceDir)) {

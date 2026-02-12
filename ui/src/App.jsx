@@ -299,18 +299,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Advanced Tools - collapsible below wizard */}
-          <details className="config-section advanced-section">
-            <summary className="section-header">
-              <span className="section-title">Advanced Tools</span>
-              <span className="section-hint">Skills, Console, Backup</span>
-            </summary>
-            <div className="section-content">
-              <SkillsCard />
-              <ConsoleCard />
-              <BackupCard onRefresh={refreshStatus} />
-            </div>
-          </details>
+          {/* Backup available during onboarding for memory-only restore */}
+          <BackupCard onRefresh={refreshStatus} />
         </>
       )}
 
