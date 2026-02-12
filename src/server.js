@@ -417,6 +417,18 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
 
     // Skip onboard if config already exists (e.g. retry after partial failure)
     if (!alreadyConfigured) {
+      // If a memory import was done before setup, preserve those files
+      // across onboard (which overwrites workspace with defaults).
+      // The memory import writes a .imported marker to signal this.
+      let savedWorkspace = null;
+      try {
+        if (fs.existsSync(path.join(WORKSPACE_DIR, ".imported"))) {
+          savedWorkspace = path.join(os.tmpdir(), `ws-preserve-${Date.now()}`);
+          fs.cpSync(WORKSPACE_DIR, savedWorkspace, { recursive: true });
+          progress("Preserving imported workspace files...");
+        }
+      } catch {}
+
       progress("Running onboard...");
       const onboardArgs = [
         "--non-interactive", "--accept-risk", "--json",
@@ -453,8 +465,18 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       if (result.output) progress(result.output.trim());
 
       if (!result.success || !isConfigured()) {
+        if (savedWorkspace) fs.rmSync(savedWorkspace, { recursive: true, force: true });
         send("done", { ok: false });
         return res.end();
+      }
+
+      // Restore preserved workspace files over the defaults that onboard created
+      if (savedWorkspace) {
+        progress("Restoring imported workspace (SOUL.md, memory, etc.)...");
+        fs.cpSync(savedWorkspace, WORKSPACE_DIR, { recursive: true, force: true });
+        fs.rmSync(savedWorkspace, { recursive: true, force: true });
+        // Remove the marker — it served its purpose
+        fs.rmSync(path.join(WORKSPACE_DIR, ".imported"), { force: true });
       }
     } else {
       progress("Config exists, re-applying provider and channel settings...");
@@ -826,7 +848,7 @@ app.get("/get-started/export", requireAuth, async (_, res) => {
   stream.pipe(res);
 });
 
-// Backup import — ?mode=workspace restores only the workspace (memory) folder
+// Backup import — ?mode=memory restores workspace + sessions but keeps config/credentials
 app.post("/get-started/import", requireAuth, async (req, res) => {
   try {
     if (!STATE_DIR.startsWith(DATA_DIR) || !WORKSPACE_DIR.startsWith(DATA_DIR)) {
@@ -838,10 +860,10 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Empty or invalid file" });
     }
 
-    const mode = req.query.mode; // "workspace" = workspace only, anything else = full
-    const workspaceOnly = mode === "workspace";
+    const mode = req.query.mode; // "memory" = workspace + sessions only, anything else = full
+    const memoryOnly = mode === "memory";
 
-    if (!workspaceOnly) await gateway.stop();
+    if (!memoryOnly) await gateway.stop();
 
     // Extract to a temp directory first so we can detect wrapper directories
     const tmpPath = path.join(os.tmpdir(), `import-${Date.now()}.tar.gz`);
@@ -863,24 +885,68 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
       }
     }
 
-    // Copy extracted contents into DATA_DIR
-    const workspaceName = path.relative(DATA_DIR, WORKSPACE_DIR);
-    for (const item of fs.readdirSync(sourceDir)) {
-      if (workspaceOnly && item !== workspaceName) continue;
-      const src = path.join(sourceDir, item);
-      const dest = path.join(DATA_DIR, item);
-      fs.cpSync(src, dest, { recursive: true, force: true });
+    const stateName = path.relative(DATA_DIR, STATE_DIR);   // ".openclaw"
+    const workspaceName = path.relative(DATA_DIR, WORKSPACE_DIR); // "workspace"
+
+    if (memoryOnly) {
+      // Restore workspace/ entirely
+      const srcWorkspace = path.join(sourceDir, workspaceName);
+      if (fs.existsSync(srcWorkspace)) {
+        fs.cpSync(srcWorkspace, WORKSPACE_DIR, { recursive: true, force: true });
+        // Leave a marker so setup knows to preserve these files across onboard
+        fs.writeFileSync(path.join(WORKSPACE_DIR, ".imported"), new Date().toISOString());
+      }
+
+      // Restore .openclaw/agents/ (sessions, conversations, memory) but not config or credentials
+      const srcAgents = path.join(sourceDir, stateName, "agents");
+      if (fs.existsSync(srcAgents)) {
+        const destAgents = path.join(STATE_DIR, "agents");
+        // Preserve current auth profiles before overwriting
+        const authFiles = [];
+        const findAuthFiles = (dir, rel = "") => {
+          try {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const entryRel = path.join(rel, entry.name);
+              if (entry.isDirectory()) findAuthFiles(path.join(dir, entry.name), entryRel);
+              else if (entry.name === "auth-profiles.json") authFiles.push({ rel: entryRel, content: fs.readFileSync(path.join(dir, entry.name), "utf8") });
+            }
+          } catch {}
+        };
+        findAuthFiles(destAgents);
+
+        fs.cpSync(srcAgents, destAgents, { recursive: true, force: true });
+
+        // Restore saved auth profiles so credentials aren't overwritten
+        for (const af of authFiles) {
+          fs.writeFileSync(path.join(destAgents, af.rel), af.content, { mode: 0o600 });
+        }
+      }
+
+      // Restore .openclaw/skills/ if present
+      const srcSkills = path.join(sourceDir, stateName, "skills");
+      if (fs.existsSync(srcSkills)) {
+        fs.cpSync(srcSkills, path.join(STATE_DIR, "skills"), { recursive: true, force: true });
+      }
+    } else {
+      // Full restore — copy everything
+      for (const item of fs.readdirSync(sourceDir)) {
+        const src = path.join(sourceDir, item);
+        const dest = path.join(DATA_DIR, item);
+        fs.cpSync(src, dest, { recursive: true, force: true });
+      }
     }
 
     fs.rmSync(tmpExtractDir, { recursive: true, force: true });
 
-    if (!workspaceOnly && isConfigured()) {
+    if (!memoryOnly && isConfigured()) {
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
       fs.writeFileSync(path.join(STATE_DIR, "gateway.token"), GATEWAY_TOKEN, { mode: 0o600 });
       await gateway.start();
+    } else if (memoryOnly && gateway.isRunning) {
+      await gateway.restart();
     }
 
-    const msg = workspaceOnly ? "Workspace restored successfully" : "Backup imported successfully";
+    const msg = memoryOnly ? "Memory restored (workspace + sessions). Config and credentials preserved." : "Backup imported successfully";
     res.json({ ok: true, message: msg });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });

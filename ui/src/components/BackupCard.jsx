@@ -4,7 +4,7 @@ export default function BackupCard({ onRefresh }) {
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showImportConfirm, setShowImportConfirm] = useState(null) // null | 'full' | 'workspace'
+  const [showImportConfirm, setShowImportConfirm] = useState(null) // null | 'full' | 'memory'
   const fileRef = useRef(null)
 
   const exportBackup = async () => {
@@ -54,8 +54,8 @@ export default function BackupCard({ onRefresh }) {
     setOutput(`Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)...\n`)
     setError('')
 
-    const endpoint = mode === 'workspace'
-      ? '/get-started/import?mode=workspace'
+    const endpoint = mode === 'memory'
+      ? '/get-started/import?mode=memory'
       : '/get-started/import'
 
     try {
@@ -80,8 +80,8 @@ export default function BackupCard({ onRefresh }) {
     }
   }
 
-  const confirmMessage = showImportConfirm === 'workspace'
-    ? 'This will overwrite the workspace (memory) only. Config and credentials are kept. Continue?'
+  const confirmMessage = showImportConfirm === 'memory'
+    ? 'This will restore workspace files, sessions, and conversations. Config and credentials are kept. Continue?'
     : 'This will overwrite all data and restart the gateway. Continue?'
 
   return (
@@ -132,10 +132,10 @@ export default function BackupCard({ onRefresh }) {
             </button>
             <button
               className="btn-secondary"
-              onClick={() => handleImportClick('workspace')}
+              onClick={() => handleImportClick('memory')}
               disabled={loading}
             >
-              {loading ? 'Importing...' : 'Workspace Only'}
+              {loading ? 'Importing...' : 'Memory Only'}
             </button>
           </div>
         ) : (
