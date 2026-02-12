@@ -68,6 +68,31 @@ export PATH="$PIP_TARGET/bin:${PATH}"
 export OPENCLAW_STATE_DIR="$STATE_DIR"
 export OPENCLAW_WORKSPACE_DIR="$WORKSPACE_DIR"
 
+# Write environment to profile so new shells inherit it
+cat > /etc/profile.d/openclaw.sh <<ENVEOF
+export HOME=/root
+export HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew
+export HOMEBREW_CACHE="$HOMEBREW_CACHE_DIR"
+export HOMEBREW_CELLAR="${HOMEBREW_PREFIX}/Cellar"
+export HOMEBREW_REPOSITORY="${HOMEBREW_PREFIX}/Homebrew"
+export HOMEBREW_NO_AUTO_UPDATE=1
+export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+export NPM_CONFIG_CACHE="$NPM_CONFIG_CACHE"
+export NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX"
+export PIP_TARGET="$PIP_TARGET"
+export PYTHONPATH="$PIP_TARGET:\${PYTHONPATH:-}"
+export OPENCLAW_STATE_DIR="$STATE_DIR"
+export OPENCLAW_WORKSPACE_DIR="$WORKSPACE_DIR"
+export DISPLAY=:99
+export PATH="$PIP_TARGET/bin:$NPM_CONFIG_PREFIX/bin:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:\$PATH"
+ENVEOF
+
+# Source it from bashrc too (for non-login interactive shells)
+if ! grep -q 'openclaw.sh' /etc/bash.bashrc 2>/dev/null; then
+    echo '. /etc/profile.d/openclaw.sh' >> /etc/bash.bashrc
+fi
+
 echo "[entrypoint] State dir: $STATE_DIR"
 echo "[entrypoint] Workspace dir: $WORKSPACE_DIR"
 echo "[entrypoint] Homebrew prefix: $HOMEBREW_PREFIX"
