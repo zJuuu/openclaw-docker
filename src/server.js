@@ -1,6 +1,7 @@
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -325,6 +326,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "5mb" }));
+app.use("/get-started/import", express.raw({ type: "application/gzip", limit: "500mb" }));
 
 // Auth middleware
 function requireAuth(req, res, next) {
@@ -808,22 +810,48 @@ app.get("/get-started/export", requireAuth, async (_, res) => {
   stream.pipe(res);
 });
 
-// Backup import (streaming — pipes directly into tar extract)
+// Backup import
 app.post("/get-started/import", requireAuth, async (req, res) => {
   try {
     if (!STATE_DIR.startsWith(DATA_DIR) || !WORKSPACE_DIR.startsWith(DATA_DIR)) {
       return res.status(400).json({ ok: false, error: "Import only works when data dirs are under /data" });
     }
 
+    const buf = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!buf || !buf.length) {
+      return res.status(400).json({ ok: false, error: "Empty or invalid file" });
+    }
+
     await gateway.stop();
 
-    await new Promise((resolve, reject) => {
-      const extract = tar.x({ cwd: DATA_DIR, gzip: true });
-      extract.on("finish", resolve);
-      extract.on("error", reject);
-      req.on("error", reject);
-      req.pipe(extract);
-    });
+    // Extract to a temp directory first so we can detect wrapper directories
+    const tmpPath = path.join(os.tmpdir(), `import-${Date.now()}.tar.gz`);
+    const tmpExtractDir = path.join(os.tmpdir(), `import-extract-${Date.now()}`);
+    fs.mkdirSync(tmpExtractDir, { recursive: true });
+
+    fs.writeFileSync(tmpPath, buf);
+    await tar.x({ file: tmpPath, cwd: tmpExtractDir, gzip: true });
+    fs.rmSync(tmpPath, { force: true });
+
+    // If the archive has a single wrapper directory (e.g. "openclaw-backup-XXXX/"),
+    // step into it so we copy the actual .openclaw/ and workspace/ contents.
+    let sourceDir = tmpExtractDir;
+    const topEntries = fs.readdirSync(sourceDir);
+    if (topEntries.length === 1) {
+      const single = path.join(sourceDir, topEntries[0]);
+      if (fs.statSync(single).isDirectory() && topEntries[0] !== ".openclaw" && topEntries[0] !== "workspace") {
+        sourceDir = single;
+      }
+    }
+
+    // Copy extracted contents into DATA_DIR
+    for (const item of fs.readdirSync(sourceDir)) {
+      const src = path.join(sourceDir, item);
+      const dest = path.join(DATA_DIR, item);
+      fs.cpSync(src, dest, { recursive: true, force: true });
+    }
+
+    fs.rmSync(tmpExtractDir, { recursive: true, force: true });
 
     if (isConfigured()) {
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
