@@ -58,6 +58,12 @@ export NPM_CONFIG_PREFIX="$DATA_DIR/.npm-global"
 mkdir -p "$NPM_CONFIG_CACHE" "$NPM_CONFIG_PREFIX/bin"
 export PATH="$NPM_CONFIG_PREFIX/bin:${PATH}"
 
+# Setup persistent pip packages
+export PIP_TARGET="$DATA_DIR/.pip-packages"
+export PYTHONPATH="$PIP_TARGET:${PYTHONPATH:-}"
+mkdir -p "$PIP_TARGET/bin"
+export PATH="$PIP_TARGET/bin:${PATH}"
+
 # Export state directories
 export OPENCLAW_STATE_DIR="$STATE_DIR"
 export OPENCLAW_WORKSPACE_DIR="$WORKSPACE_DIR"
@@ -66,6 +72,7 @@ echo "[entrypoint] State dir: $STATE_DIR"
 echo "[entrypoint] Workspace dir: $WORKSPACE_DIR"
 echo "[entrypoint] Homebrew prefix: $HOMEBREW_PREFIX"
 echo "[entrypoint] npm global prefix: $NPM_CONFIG_PREFIX"
+echo "[entrypoint] pip packages: $PIP_TARGET"
 
 # Virtual display for Chromium
 Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &

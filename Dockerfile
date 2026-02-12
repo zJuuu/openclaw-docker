@@ -52,6 +52,7 @@ RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates build-essential procps curl file git tini \
     chromium fonts-liberation fonts-noto-color-emoji xvfb \
+    python3 python3-pip python3-venv \
   && rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_PATH=/usr/bin/chromium
