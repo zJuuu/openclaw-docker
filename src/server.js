@@ -390,6 +390,17 @@ app.get("/get-started/api/status", requireAuth, async (_, res) => {
 });
 
 app.post("/get-started/api/run", requireAuth, async (req, res) => {
+  // Stream progress via SSE to avoid 504 timeouts from the reverse proxy
+  res.setHeader("content-type", "text/event-stream");
+  res.setHeader("cache-control", "no-cache");
+  res.setHeader("connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  const progress = (msg) => send("progress", { message: msg });
+
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
@@ -402,11 +413,11 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
     const isCustomEndpoint = authChoice === "custom-openai";
     const effectiveAuthChoice = isAkashML ? "skip" : (isCustomEndpoint ? "openai-api-key" : authChoice);
 
-    let output = "";
     const alreadyConfigured = isConfigured();
 
     // Skip onboard if config already exists (e.g. retry after partial failure)
     if (!alreadyConfigured) {
+      progress("Running onboard...");
       const onboardArgs = [
         "--non-interactive", "--accept-risk", "--json",
         "--no-install-daemon", "--skip-health",
@@ -438,18 +449,20 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       }
 
       const result = await cli.exec("onboard", ...onboardArgs);
-      output = result.output;
+
+      if (result.output) progress(result.output.trim());
 
       if (!result.success || !isConfigured()) {
-        res.json({ ok: false, output });
-        return;
+        send("done", { ok: false });
+        return res.end();
       }
     } else {
-      output += "Config exists, re-applying provider and channel settings...\n";
+      progress("Config exists, re-applying provider and channel settings...");
     }
 
     {
       // Configure gateway settings
+      progress("Configuring gateway...");
       await cli.exec("config", "set", "gateway.auth.mode", "token");
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
       await cli.exec("config", "set", "gateway.bind", "loopback");
@@ -462,6 +475,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
 
       // Configure browser tool to use local Chromium (installed in the Docker image)
+      progress("Configuring browser...");
       await cli.exec("config", "set", "--json", "browser", JSON.stringify({
         enabled: true,
         headless: true,
@@ -476,6 +490,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
         const akashApiKey = authSecret?.trim() || "";
 
         // Auto-discover models from Akash ML API
+        progress("Discovering Akash ML models...");
         let models = await discoverAkashMLModels(akashBaseUrl, akashApiKey);
 
         // If discovery fails and user provided a model, use that as fallback
@@ -492,8 +507,9 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
         }
 
         if (models.length === 0) {
-          output += "\n[akashml] Warning: No models discovered and none specified\n";
+          progress("[akashml] Warning: No models discovered and none specified");
         } else {
+          progress(`[akashml] Discovered ${models.length} model(s): ${models.map(m => m.name).join(", ")}`);
           const providerConfig = {
             baseUrl: akashBaseUrl,
             apiKey: akashApiKey,
@@ -517,9 +533,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
           }
           await cli.exec("config", "set", "--json", "agents.defaults.models", JSON.stringify(modelsConfig));
 
-          output += `\n[akashml] ${akashBaseUrl}\n`;
-          output += `[akashml] Discovered ${models.length} model(s): ${models.map(m => m.name).join(", ")}\n`;
-          output += `[akashml] Primary model: ${primaryModelId}\n`;
+          progress(`[akashml] Primary model: ${primaryModelId}`);
 
           // Write auth profile for the akashml provider
           const authProfileDir = path.join(STATE_DIR, "agents", "main", "agent");
@@ -545,13 +559,13 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       }
       // Configure other custom OpenAI-compatible endpoints
       else if (authChoice === "custom-openai" && customBaseUrl?.trim()) {
+        progress(`[custom endpoint] ${customBaseUrl.trim()}`);
         await cli.exec("config", "set", "llm.openai.baseUrl", customBaseUrl.trim());
-        output += `\n[custom endpoint] ${customBaseUrl.trim()}\n`;
 
         if (customModel?.trim()) {
           await cli.exec("config", "set", "llm.openai.model", customModel.trim());
           await cli.exec("config", "set", "llm.defaultModel", `openai/${customModel.trim()}`);
-          output += `[custom model] ${customModel.trim()} (set as default)\n`;
+          progress(`[custom model] ${customModel.trim()} (set as default)`);
         }
       }
 
@@ -560,6 +574,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // because OpenClaw's plugin auto-discovery registers channels with enabled:false
       // and then skips auto-enabling anything explicitly set to false.
       if (telegramToken?.trim()) {
+        progress("Configuring Telegram...");
         const telegramCfg = {
           enabled: true,
           dmPolicy: "pairing",
@@ -569,30 +584,31 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
 
         await cli.exec("config", "set", "--json", "channels.telegram", JSON.stringify(telegramCfg));
         await cli.exec("config", "set", "--json", "plugins.entries.telegram", JSON.stringify({ enabled: true }));
-        output += "\n[telegram] configured (long-polling)\n";
       }
 
       if (discordToken?.trim()) {
+        progress("Configuring Discord...");
         const cfg = JSON.stringify({ enabled: true, token: discordToken.trim(), groupPolicy: "allowlist", dm: { policy: "pairing" } });
         await cli.exec("config", "set", "--json", "channels.discord", cfg);
         await cli.exec("config", "set", "--json", "plugins.entries.discord", JSON.stringify({ enabled: true }));
-        output += "\n[discord] configured\n";
       }
 
       if (slackBotToken?.trim() || slackAppToken?.trim()) {
+        progress("Configuring Slack...");
         const cfg = JSON.stringify({ enabled: true, botToken: slackBotToken?.trim(), appToken: slackAppToken?.trim() });
         await cli.exec("config", "set", "--json", "channels.slack", cfg);
         await cli.exec("config", "set", "--json", "plugins.entries.slack", JSON.stringify({ enabled: true }));
-        output += "\n[slack] configured\n";
       }
 
+      progress("Starting gateway...");
       await gateway.restart();
     }
 
-    res.json({ ok: true, output });
+    send("done", { ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, output: String(err) });
+    send("done", { ok: false, error: String(err) });
   }
+  res.end();
 });
 
 app.post("/get-started/api/reset", requireAuth, async (_, res) => {
