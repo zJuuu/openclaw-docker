@@ -4,7 +4,7 @@ export default function BackupCard({ onRefresh }) {
   const [output, setOutput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showImportConfirm, setShowImportConfirm] = useState(false)
+  const [showImportConfirm, setShowImportConfirm] = useState(null) // null | 'full' | 'workspace'
   const fileRef = useRef(null)
 
   const exportBackup = async () => {
@@ -34,28 +34,33 @@ export default function BackupCard({ onRefresh }) {
     }
   }
 
-  const handleImportClick = () => {
+  const handleImportClick = (mode) => {
     const file = fileRef.current?.files?.[0]
     if (!file) {
       setError('Select a backup file first')
       return
     }
     setError('')
-    setShowImportConfirm(true)
+    setShowImportConfirm(mode)
   }
 
   const importBackup = async () => {
     const file = fileRef.current?.files?.[0]
     if (!file) return
 
-    setShowImportConfirm(false)
+    const mode = showImportConfirm
+    setShowImportConfirm(null)
     setLoading(true)
     setOutput(`Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)...\n`)
     setError('')
 
+    const endpoint = mode === 'workspace'
+      ? '/get-started/import?mode=workspace'
+      : '/get-started/import'
+
     try {
       const buf = await file.arrayBuffer()
-      const res = await fetch('/get-started/import', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/gzip' },
@@ -74,6 +79,10 @@ export default function BackupCard({ onRefresh }) {
       if (fileRef.current) fileRef.current.value = ''
     }
   }
+
+  const confirmMessage = showImportConfirm === 'workspace'
+    ? 'This will overwrite the workspace (memory) only. Config and credentials are kept. Continue?'
+    : 'This will overwrite all data and restart the gateway. Continue?'
 
   return (
     <div className="card">
@@ -104,34 +113,38 @@ export default function BackupCard({ onRefresh }) {
           disabled={loading}
           onChange={() => {
             setError('')
-            setShowImportConfirm(false)
+            setShowImportConfirm(null)
           }}
         />
 
-        {/* Inline error message */}
         {error && (
           <div className="inline-error">{error}</div>
         )}
 
-        {/* Inline confirmation */}
         {!showImportConfirm ? (
-          <button
-            className="btn-danger"
-            onClick={handleImportClick}
-            disabled={loading}
-            style={{ marginTop: '0.5rem' }}
-          >
-            {loading ? 'Importing...' : 'Import & Restore'}
-          </button>
+          <div className="inline-form-actions" style={{ marginTop: '0.5rem' }}>
+            <button
+              className="btn-danger"
+              onClick={() => handleImportClick('full')}
+              disabled={loading}
+            >
+              {loading ? 'Importing...' : 'Full Restore'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => handleImportClick('workspace')}
+              disabled={loading}
+            >
+              {loading ? 'Importing...' : 'Workspace Only'}
+            </button>
+          </div>
         ) : (
           <div className="inline-confirm" style={{ marginTop: '0.5rem' }}>
-            <span className="confirm-text">
-              This will overwrite current data and restart the gateway. Continue?
-            </span>
+            <span className="confirm-text">{confirmMessage}</span>
             <div className="inline-form-actions">
               <button
                 className="btn-secondary"
-                onClick={() => setShowImportConfirm(false)}
+                onClick={() => setShowImportConfirm(null)}
               >
                 Cancel
               </button>
@@ -139,7 +152,7 @@ export default function BackupCard({ onRefresh }) {
                 className="btn-danger"
                 onClick={importBackup}
               >
-                Confirm Import
+                Confirm
               </button>
             </div>
           </div>

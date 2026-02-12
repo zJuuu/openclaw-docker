@@ -12,6 +12,7 @@ export default function SkillsCard() {
       const res = await fetch('/get-started/api/skills', {
         credentials: 'same-origin',
       })
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       setOutput(data.output || 'No skills installed')
     } catch (err) {
@@ -31,6 +32,7 @@ export default function SkillsCard() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ query }),
       })
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       setOutput(data.output || 'No results found')
     } catch (err) {
@@ -50,6 +52,7 @@ export default function SkillsCard() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ slug }),
       })
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       setOutput(data.output || (data.ok ? 'Installed successfully' : 'Installation failed'))
       if (data.ok) setInput('')
@@ -70,6 +73,7 @@ export default function SkillsCard() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
       })
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       setOutput(data.output || (data.ok ? 'All skills updated' : 'Update failed'))
     } catch (err) {

@@ -16,7 +16,7 @@ export default function App() {
     authChoice: 'akashml-api',
     authSecret: '',
     customBaseUrl: 'https://api.akashml.com/v1',
-    customModel: 'deepseek-ai/DeepSeek-V3.1',
+    customModel: 'deepseek-ai/DeepSeek-V3.2',
     telegramToken: '',
     discordToken: '',
     slackBotToken: '',
@@ -48,6 +48,7 @@ export default function App() {
   const checkAuth = async () => {
     try {
       const res = await fetch('/get-started/api/auth', { credentials: 'same-origin' })
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       setAuth({ loading: false, ...data })
 
@@ -66,7 +67,7 @@ export default function App() {
         setAuth({ loading: false, authenticated: false })
         return
       }
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       setStatus({ ...data, loading: false })
     } catch (err) {
@@ -131,6 +132,7 @@ export default function App() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ channel: pairingChannel, code: pairingCode }),
       })
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
       const data = await res.json()
       if (data.ok) {
         setPairingStatus('Pairing approved!')

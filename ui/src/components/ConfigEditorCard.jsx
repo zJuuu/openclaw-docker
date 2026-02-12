@@ -65,6 +65,7 @@ export default function ConfigEditorCard() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ config: parsed, restartGateway }),
       })
+      if (!res.ok) throw new Error(`Save failed (${res.status})`)
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Save failed')
       const pretty = JSON.stringify(parsed, null, 2)

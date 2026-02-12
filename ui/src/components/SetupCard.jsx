@@ -6,7 +6,7 @@ export default function SetupCard({ config, log, appendLog, clearLog, onRefresh,
   const runSetup = async () => {
     setLoading(true)
     clearLog()
-    appendLog('Initializing OpenClaw (this may take a minute)...\n\n')
+    appendLog('Initializing OpenClaw...\n\n')
 
     try {
       const res = await fetch('/get-started/api/run', {
@@ -25,26 +25,48 @@ export default function SetupCard({ config, log, appendLog, clearLog, onRefresh,
         }),
       })
 
-      let data
-      const text = await res.text()
-      try {
-        data = JSON.parse(text)
-      } catch {
-        data = { ok: res.ok, output: text }
+      // Stream SSE events from the response
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let ok = false
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse complete SSE messages from the buffer
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() // keep incomplete chunk
+
+        for (const part of parts) {
+          let event = 'message'
+          let data = ''
+          for (const line of part.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7)
+            else if (line.startsWith('data: ')) data = line.slice(6)
+          }
+          if (!data) continue
+
+          try {
+            const parsed = JSON.parse(data)
+            if (event === 'progress' && parsed.message) {
+              appendLog(parsed.message + '\n')
+            } else if (event === 'done') {
+              ok = parsed.ok
+            }
+          } catch {}
+        }
       }
 
-      if (data.output) {
-        appendLog(data.output + '\n')
-      }
-
-      if (res.ok && data.ok !== false) {
+      if (ok) {
         appendLog('\n✓ Setup completed successfully!\n')
         appendLog('Refreshing status...\n')
       } else {
         appendLog('\n✗ Setup encountered an issue. Check the output above.\n')
       }
 
-      // Give gateway time to fully start before refreshing
       await new Promise(r => setTimeout(r, 2000))
       onRefresh()
     } catch (err) {

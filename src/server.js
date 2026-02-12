@@ -26,7 +26,15 @@ const GATEWAY_TARGET = `http://127.0.0.1:${INTERNAL_GATEWAY_PORT}`;
 const OPENCLAW_ENTRY = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 
-// Akash ML model discovery
+// Akash ML known model catalog (enrichment data from akashml.com)
+const AKASHML_CATALOG = {
+  "deepseek-ai/DeepSeek-V3.2": { name: "DeepSeek V3.2", contextWindow: 128000, reasoning: true, cost: { input: 0.28, output: 0.42 } },
+  "deepseek-ai/DeepSeek-V3.1": { name: "DeepSeek V3.1", contextWindow: 128000, reasoning: true, cost: { input: 0.27, output: 1.00 } },
+  "Qwen/Qwen3-30B-A3B": { name: "Qwen3 30B A3B", contextWindow: 32000, reasoning: true, cost: { input: 0.07, output: 0.27 } },
+  "meta-llama/Llama-3.3-70B-Instruct": { name: "Llama 3.3 70B", contextWindow: 128000, reasoning: false, cost: { input: 0.13, output: 0.40 } },
+};
+
+// Akash ML model discovery — fetches /models and enriches with catalog data
 async function discoverAkashMLModels(baseUrl, apiKey) {
   try {
     const response = await fetch(`${baseUrl}/models`, {
@@ -43,15 +51,20 @@ async function discoverAkashMLModels(baseUrl, apiKey) {
     }
     return data.data.map((model) => {
       const id = model.id;
-      const name = id.split("/").pop() || id;
-      const isReasoning = id.toLowerCase().includes("r1") || id.toLowerCase().includes("reasoning");
+      const catalog = AKASHML_CATALOG[id];
+      const name = catalog?.name || id.split("/").pop() || id;
       return {
         id,
         name,
-        reasoning: isReasoning,
+        reasoning: catalog?.reasoning ?? /r1|reasoning/i.test(id),
         input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
+        cost: {
+          input: catalog?.cost?.input ?? 0,
+          output: catalog?.cost?.output ?? 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        contextWindow: catalog?.contextWindow ?? 128000,
         maxTokens: 8192,
       };
     });
@@ -313,7 +326,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "5mb" }));
-app.use("/get-started/import", express.raw({ type: "application/gzip", limit: Infinity }));
+app.use("/get-started/import", express.raw({ type: "application/gzip", limit: "500mb" }));
 
 // Auth middleware
 function requireAuth(req, res, next) {
@@ -377,6 +390,17 @@ app.get("/get-started/api/status", requireAuth, async (_, res) => {
 });
 
 app.post("/get-started/api/run", requireAuth, async (req, res) => {
+  // Stream progress via SSE to avoid 504 timeouts from the reverse proxy
+  res.setHeader("content-type", "text/event-stream");
+  res.setHeader("cache-control", "no-cache");
+  res.setHeader("connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  const progress = (msg) => send("progress", { message: msg });
+
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
@@ -389,11 +413,11 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
     const isCustomEndpoint = authChoice === "custom-openai";
     const effectiveAuthChoice = isAkashML ? "skip" : (isCustomEndpoint ? "openai-api-key" : authChoice);
 
-    let output = "";
     const alreadyConfigured = isConfigured();
 
     // Skip onboard if config already exists (e.g. retry after partial failure)
     if (!alreadyConfigured) {
+      progress("Running onboard...");
       const onboardArgs = [
         "--non-interactive", "--accept-risk", "--json",
         "--no-install-daemon", "--skip-health",
@@ -425,18 +449,20 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       }
 
       const result = await cli.exec("onboard", ...onboardArgs);
-      output = result.output;
+
+      if (result.output) progress(result.output.trim());
 
       if (!result.success || !isConfigured()) {
-        res.json({ ok: false, output });
-        return;
+        send("done", { ok: false });
+        return res.end();
       }
     } else {
-      output += "Config exists, re-applying provider and channel settings...\n";
+      progress("Config exists, re-applying provider and channel settings...");
     }
 
     {
       // Configure gateway settings
+      progress("Configuring gateway...");
       await cli.exec("config", "set", "gateway.auth.mode", "token");
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
       await cli.exec("config", "set", "gateway.bind", "loopback");
@@ -449,6 +475,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
 
       // Configure browser tool to use local Chromium (installed in the Docker image)
+      progress("Configuring browser...");
       await cli.exec("config", "set", "--json", "browser", JSON.stringify({
         enabled: true,
         headless: true,
@@ -463,6 +490,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
         const akashApiKey = authSecret?.trim() || "";
 
         // Auto-discover models from Akash ML API
+        progress("Discovering Akash ML models...");
         let models = await discoverAkashMLModels(akashBaseUrl, akashApiKey);
 
         // If discovery fails and user provided a model, use that as fallback
@@ -479,8 +507,9 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
         }
 
         if (models.length === 0) {
-          output += "\n[akashml] Warning: No models discovered and none specified\n";
+          progress("[akashml] Warning: No models discovered and none specified");
         } else {
+          progress(`[akashml] Discovered ${models.length} model(s): ${models.map(m => m.name).join(", ")}`);
           const providerConfig = {
             baseUrl: akashBaseUrl,
             apiKey: akashApiKey,
@@ -489,10 +518,9 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
           };
           await cli.exec("config", "set", "--json", "models.providers.akashml", JSON.stringify(providerConfig));
 
-          // Use specified model, or prefer DeepSeek-V3.1 if available, otherwise first discovered
           let primaryModelId = customModel?.trim();
           if (!primaryModelId) {
-            const preferredModel = models.find(m => m.id.includes("DeepSeek-V3.1"));
+            const preferredModel = models.find(m => m.id.includes("DeepSeek-V3.2")) || models.find(m => m.id.includes("DeepSeek-V3"));
             primaryModelId = preferredModel?.id || models[0].id;
           }
           const modelKey = `akashml/${primaryModelId}`;
@@ -505,9 +533,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
           }
           await cli.exec("config", "set", "--json", "agents.defaults.models", JSON.stringify(modelsConfig));
 
-          output += `\n[akashml] ${akashBaseUrl}\n`;
-          output += `[akashml] Discovered ${models.length} model(s): ${models.map(m => m.name).join(", ")}\n`;
-          output += `[akashml] Primary model: ${primaryModelId}\n`;
+          progress(`[akashml] Primary model: ${primaryModelId}`);
 
           // Write auth profile for the akashml provider
           const authProfileDir = path.join(STATE_DIR, "agents", "main", "agent");
@@ -533,13 +559,13 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       }
       // Configure other custom OpenAI-compatible endpoints
       else if (authChoice === "custom-openai" && customBaseUrl?.trim()) {
+        progress(`[custom endpoint] ${customBaseUrl.trim()}`);
         await cli.exec("config", "set", "llm.openai.baseUrl", customBaseUrl.trim());
-        output += `\n[custom endpoint] ${customBaseUrl.trim()}\n`;
 
         if (customModel?.trim()) {
           await cli.exec("config", "set", "llm.openai.model", customModel.trim());
           await cli.exec("config", "set", "llm.defaultModel", `openai/${customModel.trim()}`);
-          output += `[custom model] ${customModel.trim()} (set as default)\n`;
+          progress(`[custom model] ${customModel.trim()} (set as default)`);
         }
       }
 
@@ -548,6 +574,7 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       // because OpenClaw's plugin auto-discovery registers channels with enabled:false
       // and then skips auto-enabling anything explicitly set to false.
       if (telegramToken?.trim()) {
+        progress("Configuring Telegram...");
         const telegramCfg = {
           enabled: true,
           dmPolicy: "pairing",
@@ -557,30 +584,31 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
 
         await cli.exec("config", "set", "--json", "channels.telegram", JSON.stringify(telegramCfg));
         await cli.exec("config", "set", "--json", "plugins.entries.telegram", JSON.stringify({ enabled: true }));
-        output += "\n[telegram] configured (long-polling)\n";
       }
 
       if (discordToken?.trim()) {
+        progress("Configuring Discord...");
         const cfg = JSON.stringify({ enabled: true, token: discordToken.trim(), groupPolicy: "allowlist", dm: { policy: "pairing" } });
         await cli.exec("config", "set", "--json", "channels.discord", cfg);
         await cli.exec("config", "set", "--json", "plugins.entries.discord", JSON.stringify({ enabled: true }));
-        output += "\n[discord] configured\n";
       }
 
       if (slackBotToken?.trim() || slackAppToken?.trim()) {
+        progress("Configuring Slack...");
         const cfg = JSON.stringify({ enabled: true, botToken: slackBotToken?.trim(), appToken: slackAppToken?.trim() });
         await cli.exec("config", "set", "--json", "channels.slack", cfg);
         await cli.exec("config", "set", "--json", "plugins.entries.slack", JSON.stringify({ enabled: true }));
-        output += "\n[slack] configured\n";
       }
 
+      progress("Starting gateway...");
       await gateway.restart();
     }
 
-    res.json({ ok: true, output });
+    send("done", { ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, output: String(err) });
+    send("done", { ok: false, error: String(err) });
   }
+  res.end();
 });
 
 app.post("/get-started/api/reset", requireAuth, async (_, res) => {
@@ -798,7 +826,7 @@ app.get("/get-started/export", requireAuth, async (_, res) => {
   stream.pipe(res);
 });
 
-// Backup import
+// Backup import — ?mode=workspace restores only the workspace (memory) folder
 app.post("/get-started/import", requireAuth, async (req, res) => {
   try {
     if (!STATE_DIR.startsWith(DATA_DIR) || !WORKSPACE_DIR.startsWith(DATA_DIR)) {
@@ -806,24 +834,54 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
     }
 
     const buf = Buffer.isBuffer(req.body) ? req.body : null;
-    if (!buf || !buf.length) return res.status(400).json({ ok: false, error: "Empty or invalid file" });
+    if (!buf || !buf.length) {
+      return res.status(400).json({ ok: false, error: "Empty or invalid file" });
+    }
 
-    // Stop gateway before importing
-    await gateway.stop();
+    const mode = req.query.mode; // "workspace" = workspace only, anything else = full
+    const workspaceOnly = mode === "workspace";
 
+    if (!workspaceOnly) await gateway.stop();
+
+    // Extract to a temp directory first so we can detect wrapper directories
     const tmpPath = path.join(os.tmpdir(), `import-${Date.now()}.tar.gz`);
+    const tmpExtractDir = path.join(os.tmpdir(), `import-extract-${Date.now()}`);
+    fs.mkdirSync(tmpExtractDir, { recursive: true });
+
     fs.writeFileSync(tmpPath, buf);
-    await tar.x({ file: tmpPath, cwd: DATA_DIR, gzip: true });
+    await tar.x({ file: tmpPath, cwd: tmpExtractDir, gzip: true });
     fs.rmSync(tmpPath, { force: true });
 
-    // Re-apply current gateway token to imported config (so UI token matches)
-    if (isConfigured()) {
+    // If the archive has a single wrapper directory (e.g. "openclaw-backup-XXXX/"),
+    // step into it so we copy the actual .openclaw/ and workspace/ contents.
+    let sourceDir = tmpExtractDir;
+    const topEntries = fs.readdirSync(sourceDir);
+    if (topEntries.length === 1) {
+      const single = path.join(sourceDir, topEntries[0]);
+      if (fs.statSync(single).isDirectory() && topEntries[0] !== ".openclaw" && topEntries[0] !== "workspace") {
+        sourceDir = single;
+      }
+    }
+
+    // Copy extracted contents into DATA_DIR
+    const workspaceName = path.relative(DATA_DIR, WORKSPACE_DIR);
+    for (const item of fs.readdirSync(sourceDir)) {
+      if (workspaceOnly && item !== workspaceName) continue;
+      const src = path.join(sourceDir, item);
+      const dest = path.join(DATA_DIR, item);
+      fs.cpSync(src, dest, { recursive: true, force: true });
+    }
+
+    fs.rmSync(tmpExtractDir, { recursive: true, force: true });
+
+    if (!workspaceOnly && isConfigured()) {
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
-      // Also update the token file
       fs.writeFileSync(path.join(STATE_DIR, "gateway.token"), GATEWAY_TOKEN, { mode: 0o600 });
       await gateway.start();
     }
-    res.json({ ok: true, message: "Backup imported successfully" });
+
+    const msg = workspaceOnly ? "Workspace restored successfully" : "Backup imported successfully";
+    res.json({ ok: true, message: msg });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });
   }

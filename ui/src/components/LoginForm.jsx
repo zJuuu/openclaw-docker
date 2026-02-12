@@ -17,12 +17,12 @@ export default function LoginForm({ onLogin }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ password }),
       })
-      const data = await res.json()
-
       if (!res.ok) {
-        setError(data.error || 'Login failed')
+        const data = await res.json().catch(() => null)
+        setError(data?.error || 'Login failed')
         return
       }
+      const data = await res.json()
 
       onLogin()
     } catch (err) {
