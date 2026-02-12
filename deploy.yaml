@@ -6,11 +6,21 @@ services:
     image: ghcr.io/zjuuu/openclaw-docker:latest
     env:
       - SETUP_PASSWORD=CHANGE_ME
+      - OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json
     expose:
       - port: 8080
         as: 80
         to:
           - global: true
+        http_options:
+          max_body_size: 524288000
+          read_timeout: 600000
+          send_timeout: 600000
+          next_cases:
+            - error
+            - timeout
+          next_tries: 3
+          next_timeout: 600000
     params:
       storage:
         data:
