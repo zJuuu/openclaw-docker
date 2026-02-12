@@ -810,7 +810,7 @@ app.get("/get-started/export", requireAuth, async (_, res) => {
   stream.pipe(res);
 });
 
-// Backup import
+// Backup import — ?mode=workspace restores only the workspace (memory) folder
 app.post("/get-started/import", requireAuth, async (req, res) => {
   try {
     if (!STATE_DIR.startsWith(DATA_DIR) || !WORKSPACE_DIR.startsWith(DATA_DIR)) {
@@ -822,7 +822,10 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Empty or invalid file" });
     }
 
-    await gateway.stop();
+    const mode = req.query.mode; // "workspace" = workspace only, anything else = full
+    const workspaceOnly = mode === "workspace";
+
+    if (!workspaceOnly) await gateway.stop();
 
     // Extract to a temp directory first so we can detect wrapper directories
     const tmpPath = path.join(os.tmpdir(), `import-${Date.now()}.tar.gz`);
@@ -845,7 +848,9 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
     }
 
     // Copy extracted contents into DATA_DIR
+    const workspaceName = path.relative(DATA_DIR, WORKSPACE_DIR);
     for (const item of fs.readdirSync(sourceDir)) {
+      if (workspaceOnly && item !== workspaceName) continue;
       const src = path.join(sourceDir, item);
       const dest = path.join(DATA_DIR, item);
       fs.cpSync(src, dest, { recursive: true, force: true });
@@ -853,12 +858,14 @@ app.post("/get-started/import", requireAuth, async (req, res) => {
 
     fs.rmSync(tmpExtractDir, { recursive: true, force: true });
 
-    if (isConfigured()) {
+    if (!workspaceOnly && isConfigured()) {
       await cli.exec("config", "set", "gateway.auth.token", GATEWAY_TOKEN);
       fs.writeFileSync(path.join(STATE_DIR, "gateway.token"), GATEWAY_TOKEN, { mode: 0o600 });
       await gateway.start();
     }
-    res.json({ ok: true, message: "Backup imported successfully" });
+
+    const msg = workspaceOnly ? "Workspace restored successfully" : "Backup imported successfully";
+    res.json({ ok: true, message: msg });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });
   }
