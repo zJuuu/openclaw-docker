@@ -32,6 +32,7 @@ const AKASHML_CATALOG = {
   "deepseek-ai/DeepSeek-V3.1": { name: "DeepSeek V3.1", contextWindow: 128000, reasoning: true, cost: { input: 0.27, output: 1.00 } },
   "Qwen/Qwen3-30B-A3B": { name: "Qwen3 30B A3B", contextWindow: 32000, reasoning: true, cost: { input: 0.07, output: 0.27 } },
   "meta-llama/Llama-3.3-70B-Instruct": { name: "Llama 3.3 70B", contextWindow: 128000, reasoning: false, cost: { input: 0.13, output: 0.40 } },
+  "MiniMaxAI/MiniMax-M2.5": { name: "MiniMax M2.5", contextWindow: 204800, maxTokens: 131100, reasoning: true, cost: { input: 0.30, output: 1.18 } },
 };
 
 // Akash ML model discovery — fetches /models and enriches with catalog data
@@ -65,7 +66,7 @@ async function discoverAkashMLModels(baseUrl, apiKey) {
           cacheWrite: 0,
         },
         contextWindow: catalog?.contextWindow ?? 128000,
-        maxTokens: 8192,
+        maxTokens: catalog?.maxTokens ?? 8192,
       };
     });
   } catch (err) {
