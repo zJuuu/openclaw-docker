@@ -29,7 +29,6 @@ const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 // Akash ML known model catalog (enrichment data from akashml.com)
 const AKASHML_CATALOG = {
   "deepseek-ai/DeepSeek-V3.2": { name: "DeepSeek V3.2", contextWindow: 128000, reasoning: true, cost: { input: 0.28, output: 0.42 } },
-  "deepseek-ai/DeepSeek-V3.1": { name: "DeepSeek V3.1", contextWindow: 128000, reasoning: true, cost: { input: 0.27, output: 1.00 } },
   "Qwen/Qwen3-30B-A3B": { name: "Qwen3 30B A3B", contextWindow: 32000, reasoning: true, cost: { input: 0.07, output: 0.27 } },
   "meta-llama/Llama-3.3-70B-Instruct": { name: "Llama 3.3 70B", contextWindow: 128000, reasoning: false, cost: { input: 0.13, output: 0.40 } },
   "MiniMaxAI/MiniMax-M2.5": { name: "MiniMax M2.5", contextWindow: 204800, maxTokens: 131100, reasoning: true, cost: { input: 0.30, output: 1.18 } },
