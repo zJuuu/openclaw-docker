@@ -983,8 +983,26 @@ app.get("/get-started", (_, res) => {
 });
 
 // Proxy to gateway
-const proxy = httpProxy.createProxyServer({ target: GATEWAY_TARGET, ws: true, xfwd: true });
+const proxy = httpProxy.createProxyServer({ target: GATEWAY_TARGET, ws: true, xfwd: false });
 proxy.on("error", err => console.error("[proxy]", err));
+
+// Rewrite Origin/Host headers so the gateway sees requests as local.
+// This bypasses the controlUi.allowedOrigins check for the internal dashboard
+// since all requests come through our authenticated proxy anyway.
+proxy.on("proxyReq", (proxyReq) => {
+  proxyReq.setHeader("origin", GATEWAY_TARGET);
+  proxyReq.setHeader("host", `127.0.0.1:${INTERNAL_GATEWAY_PORT}`);
+  proxyReq.removeHeader("x-forwarded-for");
+  proxyReq.removeHeader("x-forwarded-host");
+  proxyReq.removeHeader("x-forwarded-proto");
+});
+proxy.on("proxyReqWs", (proxyReq) => {
+  proxyReq.setHeader("origin", GATEWAY_TARGET);
+  proxyReq.setHeader("host", `127.0.0.1:${INTERNAL_GATEWAY_PORT}`);
+  proxyReq.removeHeader("x-forwarded-for");
+  proxyReq.removeHeader("x-forwarded-host");
+  proxyReq.removeHeader("x-forwarded-proto");
+});
 
 // Public paths that don't require session auth (webhooks use their own signature validation)
 const PUBLIC_PATHS = [
