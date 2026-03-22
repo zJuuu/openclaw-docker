@@ -215,6 +215,7 @@ class GatewayManager {
         await cli.exec("config", "set", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]));
       }
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
+      await cli.exec("config", "set", "gateway.controlUi.allowedOrigins", JSON.stringify([`http://127.0.0.1:${INTERNAL_GATEWAY_PORT}`]));
     } catch (err) {
       console.warn("[gateway] Failed to check/set trustedProxies:", err.message);
     }
@@ -506,6 +507,8 @@ app.post("/get-started/api/run", requireAuth, async (req, res) => {
       await cli.exec("config", "set", "gateway.trustedProxies", JSON.stringify(["127.0.0.1", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]));
       // Allow insecure auth for Control UI behind Akash's HTTPS proxy.
       await cli.exec("config", "set", "gateway.controlUi.allowInsecureAuth", "true");
+      // Allow all origins for the Control UI since our proxy handles auth.
+      await cli.exec("config", "set", "gateway.controlUi.allowedOrigins", JSON.stringify([`http://127.0.0.1:${INTERNAL_GATEWAY_PORT}`]));
 
       // Configure browser tool to use local Chromium (installed in the Docker image)
       progress("Configuring browser...");
