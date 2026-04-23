@@ -186,7 +186,7 @@ export default function ProviderCard({ authChoice, authSecret, customBaseUrl, cu
       {/* AkashML promo */}
       {selectedProvider.id === 'akashml' && (
         <div className="akashml-promo">
-          Get <strong>$100 in free credits</strong> when you sign up at{' '}
+          Get <strong>$25 in free credits</strong> when you sign up at{' '}
           <a href="https://akashml.com" target="_blank" rel="noopener noreferrer">akashml.com</a>
         </div>
       )}

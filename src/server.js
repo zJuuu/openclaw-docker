@@ -26,12 +26,13 @@ const GATEWAY_TARGET = `http://127.0.0.1:${INTERNAL_GATEWAY_PORT}`;
 const OPENCLAW_ENTRY = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 
-// Akash ML known model catalog (enrichment data from akashml.com)
+// Akash ML known model catalog (enrichment data from api.akashml.com)
 const AKASHML_CATALOG = {
-  "deepseek-ai/DeepSeek-V3.2": { name: "DeepSeek V3.2", contextWindow: 128000, reasoning: true, cost: { input: 0.28, output: 0.42 } },
-  "Qwen/Qwen3-30B-A3B": { name: "Qwen3 30B A3B", contextWindow: 32000, reasoning: true, cost: { input: 0.07, output: 0.27 } },
-  "meta-llama/Llama-3.3-70B-Instruct": { name: "Llama 3.3 70B", contextWindow: 128000, reasoning: false, cost: { input: 0.13, output: 0.40 } },
-  "MiniMaxAI/MiniMax-M2.5": { name: "MiniMax M2.5", contextWindow: 204800, maxTokens: 131100, reasoning: true, cost: { input: 0.30, output: 1.18 } },
+  "deepseek-ai/DeepSeek-V3.2": { name: "DeepSeek V3.2", contextWindow: 163840, reasoning: true, cost: { input: 0.28, output: 0.42 } },
+  "meta-llama/Llama-3.3-70B-Instruct": { name: "Llama 3.3 70B", contextWindow: 131072, reasoning: false, cost: { input: 0.13, output: 0.40 } },
+  "MiniMaxAI/MiniMax-M2.5": { name: "MiniMax M2.5", contextWindow: 196608, maxTokens: 131100, reasoning: true, cost: { input: 0.20, output: 1.18 } },
+  "google/gemma-4-31B-it": { name: "Gemma 4 31B", contextWindow: 131072, reasoning: true, input: ["text", "image"], cost: { input: 0.14, output: 0.40 } },
+  "Qwen/Qwen3.5-35B-A3B": { name: "Qwen3.5 35B A3B", contextWindow: 262144, reasoning: true, input: ["text", "image"], cost: { input: 0.23, output: 1.80 } },
 };
 
 // Akash ML model discovery — fetches /models and enriches with catalog data
@@ -57,7 +58,7 @@ async function discoverAkashMLModels(baseUrl, apiKey) {
         id,
         name,
         reasoning: catalog?.reasoning ?? /r1|reasoning/i.test(id),
-        input: ["text"],
+        input: catalog?.input ?? ["text"],
         cost: {
           input: catalog?.cost?.input ?? 0,
           output: catalog?.cost?.output ?? 0,
